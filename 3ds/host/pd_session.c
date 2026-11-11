@@ -3,7 +3,7 @@
 #include "../core/pd_games.h"
 #include "../core/pd_tables.h"
 #include "../../linux/gb_field.h"
-#include "pd_mixer.h"
+#include "../emu/pd_emu.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,12 +11,9 @@
 #include <sys/stat.h>
 #include <time.h>
 
-#include <mgba-util/vfs.h>
+// The port's own seam over armGBA and Gambatte, in mGBA's names (../emu/include): not mGBA's headers.
 #include <mgba/core/core.h>
-#include <mgba/core/serialize.h>
-
 #include <mgba/internal/gb/gb.h>
-#include <mgba/internal/gb/memory.h>
 
 #include "../../app/src/main/cpp/pk_call.h"
 #include "../../app/src/main/cpp/pk_cheats.h"
@@ -29,9 +26,12 @@
 #include "../core/pd_romart.h"
 #include "../core/pd_style.h"
 
-// What a save state keeps: the RTC, never the save data - loading one must not write an old copy over the save file
-// (CLAUDE.md: save files are sacred).
-#define STATE_FLAGS SAVESTATE_RTC
+// A save state never brings the save data back: pd_emu_load_state keeps the cartridge's save memory as it is, so
+// loading one can't write an old copy over the save file (CLAUDE.md: save files are sacred).
+// EXPAND / ZOOM OUT draw past the game's picture from mGBA's renderer (each pixel's layer, each line's registers as it
+// was drawn). armGBA's renderer has neither to give, so this build keeps the game's own picture: ASPECT is ORIGINAL
+// whatever the settings file says, and pk_wide only tells the scene (field, menu, battle) for the HUD and AUTO-RUN.
+#define ASPECT(s) ((void) (s), PD_ASPECT_ORIGINAL)
 #define NOTICE_FRAMES 150
 #define HUD_AFTER_FRAMES 20 // the HUD comes on after this much plain field (FieldHud's rule), off at once
 #define BIKE_TRIES 15       // PokeDaisyActivity's SELECT_TRIES
@@ -90,12 +90,11 @@ bool pd_session_write(void* ctx, uint32_t addr, const void* data, size_t len) {
         return true;
     }
     if (addr >= 0x02000000 && addr - 0x02000000 + len <= s->ewramSize) {
-        memcpy(s->ewram + (addr - 0x02000000), data, len);
-        return true;
+        return pd_emu_write(s->core, addr, data, len);
     }
     if (addr >= 0x03000000 && addr - 0x03000000 + len <= s->iwramSize) {
-        memcpy(s->iwram + (addr - 0x03000000), data, len);
-        return true;
+        // Through the core: the recompiler drops what it compiled from these bytes, if anything.
+        return pd_emu_write(s->core, addr, data, len);
     }
     return false;
 }
@@ -167,11 +166,7 @@ bool pd_session_save_state(struct pd_session* s, int slot) {
     }
     char vfPath[512], path[512], thumb[520];
     state_paths(s, slot, vfPath, sizeof(vfPath), path, sizeof(path));
-    pd_mixer_release(s->core);
-    struct VFile* vf = VFileOpen(vfPath, O_CREAT | O_TRUNC | O_RDWR);
-    if (!vf) return false;
-    bool ok = mCoreSaveStateNamed(s->core, vf, STATE_FLAGS);
-    vf->close(vf);
+    bool ok = pd_emu_save_state(s->core, path);
     uint32_t* px = s->thumbs[slot];
     unsigned gw = 240, gh = 160;
     s->core->desiredVideoDimensions(s->core, &gw, &gh);
@@ -192,12 +187,22 @@ bool pd_session_save_state(struct pd_session* s, int slot) {
     return ok;
 }
 
-static void write_state(struct pd_session* s, const char* vfPath) {
-    struct VFile* vf = VFileOpen(vfPath, O_CREAT | O_TRUNC | O_RDWR);
-    if (!vf) return;
-    pd_mixer_release(s->core);
-    mCoreSaveStateNamed(s->core, vf, STATE_FLAGS);
-    vf->close(vf);
+// Loads a state file of this core's; one that isn't (an mGBA state from the earlier build) is left alone, with why.
+static bool load_state_file(struct pd_session* s, const char* path) {
+    switch (pd_emu_load_state(s->core, path)) {
+    case PD_EMU_STATE_OK:
+        s->stateRefused = NULL;
+        return true;
+    case PD_EMU_STATE_FOREIGN:
+        s->stateRefused = "Made by the old mGBA build: can't load";
+        return false;
+    case PD_EMU_STATE_OTHER_GAME:
+        s->stateRefused = "That state is another game's";
+        return false;
+    default:
+        s->stateRefused = NULL;
+        return false;
+    }
 }
 
 bool pd_session_undo_save(struct pd_session* s) {
@@ -219,10 +224,7 @@ bool pd_session_undo_load(struct pd_session* s) {
     if (!s->host.undoLoad) return false;
     char vf[512], path[512];
     undo_path(s, "undoload", vf, sizeof(vf), path, sizeof(path));
-    struct VFile* f = VFileOpen(vf, O_RDONLY);
-    if (!f) return false;
-    bool ok = mCoreLoadStateNamed(s->core, f, STATE_FLAGS);
-    f->close(f);
+    bool ok = load_state_file(s, path);
     if (ok) {
         pk_heal_rtc(s->core);
         pk_wide_reset();
@@ -237,12 +239,9 @@ bool pd_session_load_state(struct pd_session* s, int slot) {
     s->files.backupSave(s->files.ctx);
     char undoVf[512], undo[512];
     undo_path(s, "undoload", undoVf, sizeof(undoVf), undo, sizeof(undo));
-    write_state(s, undoVf);
+    pd_emu_save_state(s->core, undo);
     s->host.undoLoad = true;
-    struct VFile* vf = VFileOpen(vfPath, O_RDONLY);
-    if (!vf) return false;
-    bool ok = mCoreLoadStateNamed(s->core, vf, STATE_FLAGS);
-    vf->close(vf);
+    bool ok = load_state_file(s, path);
     if (ok) {
         pk_heal_rtc(s->core);
         pk_wide_reset(); // its RAM history is from before the jump
@@ -301,7 +300,6 @@ void pd_session_start(struct pd_session* s, struct mCore* core, const uint32_t* 
     s->files = *files;
     bool gba = core->platform(core) == mPLATFORM_GBA;
     if (gba) {
-        pd_mixer_attach(core);
         s->ewram = core->getMemoryBlock(core, 0x02, &s->ewramSize);
         s->iwram = core->getMemoryBlock(core, 0x03, &s->iwramSize);
     }
@@ -340,8 +338,8 @@ void pd_session_start(struct pd_session* s, struct mCore* core, const uint32_t* 
     s->fieldKnown = gba && pk_field_configure(s->romCrc) != 0;
     s->wildSwitch = s->fieldKnown ? pk_wild_switch_find(s->rom, s->romSize) : 0;
     if (s->wildSwitch) pk_field_wild(s->wildSwitch, settings->wildOff);
-    s->host.hasExpand = true;
-    s->host.expandGame = s->wideKnown;
+    s->host.hasExpand = false; // see ASPECT above
+    s->host.expandGame = false;
     s->host.hasHud = true;
     s->host.hasPerf = true;
     s->host.fullSettings = true;
@@ -374,7 +372,7 @@ static bool in_battle(const struct pd_session* s) {
 
 int pd_session_screen(const struct pd_session* s) {
     int mode = s->settings->screenMode;
-    if (mode == PD_SCREEN_PIXEL && s->wideKnown && s->settings->aspect != PD_ASPECT_ORIGINAL) mode = PD_SCREEN_SHARP_125;
+    if (mode == PD_SCREEN_PIXEL && s->wideKnown && ASPECT(s) != PD_ASPECT_ORIGINAL) mode = PD_SCREEN_SHARP_125;
     if (mode != PD_SCREEN_STRETCH && in_battle(s)) mode = PD_SCREEN_SHARP;
     return mode;
 }
@@ -426,10 +424,10 @@ static void frame_whole(void* ctx) {
 static void wide_tick(struct pd_session* s, bool skip) {
     s->wideReady = false;
     if (!s->wideKnown) return;
-    pk_wide_lines(s->settings->aspect != PD_ASPECT_ORIGINAL);
+    pk_wide_lines(ASPECT(s) != PD_ASPECT_ORIGINAL);
     // Nothing past the picture, so only the scene is wanted (FLY's "on the field"): a look every few frames. Every frame
     // took 7 ms of a New 3DS's 16.7, and with the game's own 9 that's one refresh too many.
-    bool original = s->settings->aspect == PD_ASPECT_ORIGINAL;
+    bool original = ASPECT(s) == PD_ASPECT_ORIGINAL;
     if (original && s->frame % ORIGINAL_SCENE_EVERY) return;
     int fw = pk_wide_frame_w(), fh = pk_wide_frame_h();
     // A GBA frame is already the rows EXPAND reads; a Game Boy's is narrower than the buffer's.
@@ -450,8 +448,8 @@ static void wide_tick(struct pd_session* s, bool skip) {
         pk_wide_finish();
         return;
     }
-    int aspect = s->settings->aspect == PD_ASPECT_ZOOM_OUT && (in_battle(s) || (s->settings->autoZoom &&
-        pk_wide_scene() != PK_WIDE_SCENE_FIELD)) ? PD_ASPECT_EXPAND : s->settings->aspect;
+    int aspect = ASPECT(s) == PD_ASPECT_ZOOM_OUT && (in_battle(s) || (s->settings->autoZoom &&
+        pk_wide_scene() != PK_WIDE_SCENE_FIELD)) ? PD_ASPECT_EXPAND : ASPECT(s);
     wide_window(s, aspect, &s->wideW, &s->wideH);
     struct PkWideView v = { (fw - s->wideW) / 2, (fh - s->wideH) / 2, s->wideW, s->wideH };
     wideShown ^= 1;
@@ -505,7 +503,6 @@ void pd_session_run_frame(struct pd_session* s, uint32_t playerKeys, bool last) 
     s->prof.run += ran - start;
     if (s->game.kind != PD_GAME_GB) {
         pk_rest_note(s->core);
-        pd_mixer_frame(s->core);
     }
     if (s->fieldKnown)
         s->fieldFlags = pk_field_state(s->core, s->settings->runIndoors, s->wildSwitch && s->settings->wildOff ? 0 : 100);
@@ -637,7 +634,7 @@ static void quick_run(struct pd_session* s, const struct quick_item* item) {
         pd_session_show(s, pd_session_save_state(s, s->host.slotSelected) ? "State saved" : "State save failed");
         break;
     case QUICK_LOAD_STATE:
-        pd_session_show(s, pd_session_load_state(s, s->host.slotSelected) ? "State loaded" : "State load failed");
+        pd_session_show(s, pd_session_load_state(s, s->host.slotSelected) ? "State loaded" : s->stateRefused ? s->stateRefused : "State load failed");
         break;
     case QUICK_FF:
         s->ffToggled = !s->ffToggled;
@@ -1013,7 +1010,7 @@ static void overlay_update(struct pd_session* s) {
     unsigned gw = 240, gh = 160;
     s->core->desiredVideoDimensions(s->core, &gw, &gh);
     int mode = pd_session_screen(s);
-    bool wide = s->wideKnown && s->settings->aspect != PD_ASPECT_ORIGINAL, pixel = mode == PD_SCREEN_PIXEL;
+    bool wide = s->wideKnown && ASPECT(s) != PD_ASPECT_ORIGINAL, pixel = mode == PD_SCREEN_PIXEL;
     bool mid = mode == PD_SCREEN_SHARP_125;
     int picture = mode == PD_SCREEN_STRETCH || wide ? PD_TOP_W : pixel ? (int) gw : mid ? (int) gw * 5 / 4 : (int) gw * PD_TOP_H / (int) gh;
     int pictureH = wide ? PD_TOP_H : pixel ? (int) gh : mid ? (int) gh * 5 / 4 : PD_TOP_H;
@@ -1159,7 +1156,7 @@ bool pd_session_action(struct pd_session* s, enum pd_action action) {
         pd_session_show(s, pd_session_save_state(s, s->host.slotSelected) ? "State saved" : "State save failed");
         return true;
     case PD_ACTION_LOAD_STATE:
-        pd_session_show(s, pd_session_load_state(s, s->host.slotSelected) ? "State loaded" : "State load failed");
+        pd_session_show(s, pd_session_load_state(s, s->host.slotSelected) ? "State loaded" : s->stateRefused ? s->stateRefused : "State load failed");
         return true;
     default:
         return false;

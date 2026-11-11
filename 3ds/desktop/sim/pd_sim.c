@@ -25,13 +25,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
 
-#include <mgba-util/vfs.h>
+// The port's own seam over armGBA and Gambatte, in mGBA's names (../../emu/include): not mGBA's headers.
 #include <mgba/core/core.h>
-#include <mgba/core/log.h>
-#include "../../host/pd_mixer.h"
-#include <mgba/internal/gba/gba.h>
 
 #include "../../../app/src/main/cpp/pk_call.h"
 #include "../../../app/src/main/cpp/pk_host.h"
@@ -40,6 +38,7 @@
 #include "../../core/pd_settings.h"
 #include "../../core/pd_style.h"
 #include "../../core/pd_gb.h"
+#include "../../emu/pd_emu.h"
 #include "../../host/pd_session.h"
 #include "../pd_png.h"
 
@@ -55,10 +54,19 @@ static const char* outDir;
 static int failures;
 static uint32_t heldKeys;
 
-static void noopLog(struct mLogger* log, int category, enum mLogLevel level, const char* format, va_list args) {
-    (void) log; (void) category; (void) level; (void) format; (void) args;
+// Sound isn't played: what the core made is counted and summed, for `audio`.
+static unsigned long audioFrames, audioLoud;
+
+static void sim_audio(void* ctx, const int16_t* stereo, size_t n) {
+    (void) ctx;
+    audioFrames += n;
+    for (size_t i = 0; i < n * 2; i++) audioLoud += (unsigned long) (stereo[i] < 0 ? -stereo[i] : stereo[i]);
 }
-static struct mLogger silentLogger = { .log = noopLog, .filter = NULL };
+
+static void sim_log(void* ctx, const char* line) {
+    (void) ctx;
+    if (getenv("PD_SIM_LOG")) fprintf(stderr, "[emu] %s\n", line);
+}
 
 static void frames(int n, uint32_t keys) {
     static uint32_t last;
@@ -210,6 +218,8 @@ static void print_state(void) {
     printf("\n");
 }
 
+static bool lastLoad;
+
 static void expect(char* what) {
     pd_snapshot_read(&session.snap, &session.game, pd_session_read, &session);
     const struct pd_snapshot* s = &session.snap;
@@ -219,6 +229,12 @@ static void expect(char* what) {
     if (!strcmp(kind, "state")) ok = (int) s->battleState == state_id(a);
     else if (!strcmp(kind, "inbattle")) ok = s->inBattle == (atoi(a) != 0);
     else if (!strcmp(kind, "hp")) ok = s->party[atoi(a)].hp == atoi(b);
+    else if (!strcmp(kind, "party")) ok = s->partyCount == atoi(a);
+    else if (!strcmp(kind, "species")) ok = s->party[atoi(a)].species == atoi(b);
+    else if (!strcmp(kind, "level")) ok = s->party[atoi(a)].level == atoi(b);
+    else if (!strcmp(kind, "audio")) ok = audioFrames > 0 && audioLoud > 0;
+    else if (!strcmp(kind, "load")) ok = lastLoad == (atoi(a) != 0);
+    else if (!strcmp(kind, "recompiler")) ok = pd_emu_recompiling(session.core);
     if (!ok) {
         failures++;
         printf("FAIL: expect %s\n  ", what);
@@ -312,11 +328,36 @@ static void command(char* line) {
             printf("\n");
         }
     } else if (!strcmp(cmd, "mixer")) {
-        // The native mixer against the game's, run side by side on every mix so far (pd_mixer.c).
-        printf("mixer mixes=%u differed=%u reverb=%u fixed=%u resampled=%u compressed=%u reversed=%u ended=%u\n", pd_mixer_stats.mixes,
-               pd_mixer_stats.differed, pd_mixer_stats.reverb, pd_mixer_stats.fixed, pd_mixer_stats.resampled, pd_mixer_stats.compressed,
-               pd_mixer_stats.reversed, pd_mixer_stats.ended);
-        if (pd_mixer_stats.differed) failures++;
+        // The mGBA build's native sound mixer (host/pd_mixer.c) was checked here. armGBA runs the game's own mixer on
+        // its recompiler, so there is nothing to compare; the command stays so the scripts read the same.
+        printf("mixer: the game's own, emulated\n");
+    } else if (!strcmp(cmd, "audio")) {
+        // The sound made so far: stereo frames and their mean level. `expect audio` wants some of both.
+        printf("audio frames=%lu level=%lu\n", audioFrames, audioFrames ? audioLoud / (audioFrames * 2) : 0);
+    } else if (!strcmp(cmd, "state-save")) {
+        printf("state-save %d: %s\n", atoi(args), pd_session_save_state(&session, atoi(args)) ? "ok" : "FAILED");
+    } else if (!strcmp(cmd, "state-load")) {
+        bool ok = pd_session_load_state(&session, atoi(args));
+        printf("state-load %d: %s%s%s\n", atoi(args), ok ? "ok" : "refused", session.stateRefused ? " - " : "", session.stateRefused ? session.stateRefused : "");
+        lastLoad = ok;
+    } else if (!strcmp(cmd, "reset")) {
+        pk_finish_save(session.core, PK_FINISH_SAVE_FRAMES, NULL);
+        session.core->reset(session.core);
+        pk_heal_rtc(session.core);
+    } else if (!strcmp(cmd, "ff")) {
+        // N loops of fast-forward at the settings' speed, as ZR held.
+        static uint32_t last;
+        for (int i = atoi(args); i > 0; i--) {
+            struct pd_input in = { .held = heldKeys, .down = heldKeys & ~last, .ffHeld = true, .stickAngle = -1 };
+            last = heldKeys;
+            pd_session_tick(&session, &in, 16);
+        }
+        printf("ff: frame %u\n", session.frame);
+    } else if (!strcmp(cmd, "hold")) {
+        heldKeys = parse_keys(args);
+    } else if (!strcmp(cmd, "info")) {
+        printf("core: %s, %s; frame %u\n", session.game.kind == PD_GAME_GB ? "Gambatte" : pd_emu_recompiling(session.core) ? "armGBA recompiler" : "armGBA interpreter",
+               pd_emu_threaded(session.core) ? "threaded" : "one thread", session.frame);
     } else if (!strcmp(cmd, "state")) {
         print_state();
     } else if (!strcmp(cmd, "expect")) {
@@ -348,46 +389,37 @@ int main(int argc, char** argv) {
         fprintf(stderr, "usage: pd_sim ROM SAVE OUTDIR [SCRIPT]\n");
         return 2;
     }
-    mLogSetDefaultLogger(&silentLogger);
     outDir = argv[3];
     pd_settings_defaults(&settings);
     char savePath[1024];
     snprintf(savePath, sizeof(savePath), "%s/sim.sav", outDir);
-    unlink(savePath);
-    if (strcmp(argv[2], "-")) copy_file(argv[2], savePath);
+    // "=": the save the last run left in OUTDIR (a save's round trip); "-": none; else a copy of the file.
+    if (strcmp(argv[2], "=")) {
+        unlink(savePath);
+        if (strcmp(argv[2], "-")) copy_file(argv[2], savePath);
+    }
 
-    // From a copy in memory: a GPIO write swaps mGBA's own mapping of a mapped file (FireRed), which would leave the
-    // session's pointer dangling. mGBA's 3DS build keeps every ROM in one fixed buffer, so it can't happen there.
     FILE* romFile = fopen(argv[1], "rb");
     if (!romFile) {
         fprintf(stderr, "can't open %s\n", argv[1]);
         return 1;
     }
+    uint8_t header[0xC0] = { 0 };
     fseek(romFile, 0, SEEK_END);
     size_t romLen = (size_t) ftell(romFile);
     fseek(romFile, 0, SEEK_SET);
-    void* romBytes = malloc(romLen);
-    if (fread(romBytes, 1, romLen, romFile) != romLen) return 1;
+    if (fread(header, 1, sizeof(header), romFile) != sizeof(header)) return 1;
     fclose(romFile);
-    struct VFile* rom = VFileFromMemory(romBytes, romLen);
-    uint8_t header[0xC0];
-    rom->seek(rom, 0, SEEK_SET);
-    rom->read(rom, header, sizeof(header));
-    rom->seek(rom, 0, SEEK_SET);
-    pd_game_detect(&session.game, header, (size_t) rom->size(rom));
-    struct mCore* core = mCoreFindVF(rom);
-    if (!core || !core->init(core)) return 1;
-    mCoreInitConfig(core, NULL);
-    core->setVideoBuffer(core, video, STRIDE);
-    if (core->platform(core) == mPLATFORM_GB) {
-        mCoreConfigSetIntValue(&core->config, "sgb.borders", 0);
-        core->reloadConfigOption(core, "sgb.borders", &core->config);
+    pd_game_detect(&session.game, header, romLen);
+    // PD_SIM_THREADS=1: armGBA's renderer and mixer on threads of their own, as on a New 3DS.
+    struct pd_emu_host emuHost = { .audio = sim_audio, .log = sim_log, .workDir = outDir, .threaded = getenv("PD_SIM_THREADS") != NULL };
+    char error[128] = "";
+    struct mCore* core = pd_emu_load(argv[1], savePath, &emuHost, error, sizeof(error));
+    if (!core) {
+        fprintf(stderr, "%s: %s\n", argv[1], error);
+        return 1;
     }
-    core->setAudioBufferSize(core, 1024);
-    if (!core->loadROM(core, rom)) return 1;
-    struct VFile* save = VFileOpen(savePath, O_CREAT | O_RDWR);
-    if (save) core->loadSave(core, save);
-    core->reset(core);
+    core->setVideoBuffer(core, video, STRIDE);
     pk_heal_rtc(core);
     struct pd_session_host files = { .statePath = state_path, .backupSave = no_backup };
     session.host.batteryPct = 76;

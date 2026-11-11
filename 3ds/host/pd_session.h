@@ -37,7 +37,7 @@ struct pd_input {
 
 // What the host does for the session.
 struct pd_session_host {
-    // STATES' slots: the file's path for mGBA's VFile and for stdio (they differ on the 3DS).
+    // STATES' slots: the file's path, twice (mGBA's VFile and stdio differed on the 3DS; path is the one that's used).
     void (*statePath)(void* ctx, int slot, char* vfPath, size_t vfLen, char* stdPath, size_t stdLen);
     // The save was about to change under a load: copied aside first.
     void (*backupSave)(void* ctx);
@@ -154,6 +154,7 @@ struct pd_session {
 
     // STATES.
     int undoSaveSlot; // the slot a SAVE replaced, -1 = none
+    const char* stateRefused; // why the last LOAD left the game alone when the file wasn't one to load; NULL: no reason to give
     uint32_t thumbs[PD_STATE_SLOTS][PD_STATE_THUMB_W * PD_STATE_THUMB_H];
 };
 

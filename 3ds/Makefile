@@ -152,10 +152,11 @@ tables:
 			-DCMAKE_TOOLCHAIN_FILE=/repo/third_party/mgba/src/platform/3ds/CMakeToolchain.txt \
 			&& cmake --build build-dev -j$$(nproc) && cp build-dev/pokedaisy.3dsx pokedaisy-dev.3dsx"
 
-# pd_sim: the real mGBA core, the real ROMs and the app's host logic, no console (desktop/sim/).
-$(BUILD)/sim/pd_sim: $(CORE_SRC) $(wildcard core/*.h) $(wildcard host/*) desktop/sim/pd_sim.c desktop/sim/CMakeLists.txt
-	cmake -S desktop/sim -B $(BUILD)/sim -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_POLICY_VERSION_MINIMUM=3.5 >/dev/null
-	cmake --build $(BUILD)/sim --target pd_sim -j8
+# pd_sim: the port's emulator (emu/: armGBA with its x86-64 recompiler, Gambatte), the real ROMs and the app's host
+# logic, no console (desktop/sim/). Plain make, a C and a C++ compiler and zlib: no CMake.
+.PHONY: $(BUILD)/sim/pd_sim
+$(BUILD)/sim/pd_sim:
+	@$(MAKE) --no-print-directory -C desktop/sim OUT=$(abspath $(BUILD))/sim -j4
 
 .PHONY: sim sim-test
 sim: $(BUILD)/sim/pd_sim
