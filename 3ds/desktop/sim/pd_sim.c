@@ -213,7 +213,7 @@ static void wild(int species, int level) {
 static void print_state(void) {
     pd_snapshot_read(&session.snap, &session.game, pd_session_read, &session);
     const struct pd_snapshot* s = &session.snap;
-    printf("state=%s inBattle=%d mapsec=%d money=%ld party:", STATES[s->battleState], s->inBattle, s->mapsec, s->money);
+    printf("state=%s inBattle=%d mapsec=%d at=%d,%d money=%ld party:", STATES[s->battleState], s->inBattle, s->mapsec, s->x, s->y, s->money);
     for (int i = 0; i < s->partyCount; i++) printf(" %s %d/%d", s->party[i].nickname, s->party[i].hp, s->party[i].maxHp);
     printf("\n");
 }
