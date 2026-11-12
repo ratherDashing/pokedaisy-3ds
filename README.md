@@ -1,3 +1,9 @@
+> [!IMPORTANT]
+> **This is ratherDashing's working fork, not PokeDaisy.** It is where I try 3DS changes before sending them to
+> [lidor30/pokedaisy](https://github.com/lidor30/pokedaisy) as pull requests. It has no releases and no support.
+> For PokeDaisy on any device, the 3DS included, use the official project:
+> **https://github.com/lidor30/pokedaisy** · [pokedaisy.com](https://pokedaisy.com)
+
 <div align="center">
 
 <img src="https://pokedaisy.com/og.png" alt="PokeDaisy: Game Boy, Game Boy Color, GBA and DS player with a live companion, on two screens or one, for Pokemon games and ROM hacks, free and open source" width="100%">

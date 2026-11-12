@@ -1,5 +1,11 @@
 # PokeDaisy for the Nintendo 3DS (early preview)
 
+> [!IMPORTANT]
+> **This is ratherDashing's working fork, not PokeDaisy.** It is where I try 3DS changes before sending them to
+> [lidor30/pokedaisy](https://github.com/lidor30/pokedaisy) as pull requests. It has no releases and no support.
+> For PokeDaisy on any device, the 3DS included, use the official project:
+> **https://github.com/lidor30/pokedaisy** · [pokedaisy.com](https://pokedaisy.com)
+
 A homebrew port of PokeDaisy for the **New 3DS / New 3DS XL / New 2DS XL**: the game runs on the top screen and the
 companion lives on the touch screen. Game Boy Advance games run on **armGBA** (`third_party/armgba`, the
 [ratherDashing/armGBA](https://github.com/ratherDashing/armGBA) fork's `3ds` branch: a cycle-accurate core with a
@@ -176,8 +182,8 @@ executable). The original 3DS, 3DS XL and 2DS aren't supported: the app tells yo
 3. For sound, the DSP firmware must be dumped once (`sdmc:/3ds/dspfirm.cdc`, the DSP1 homebrew does it) - without it
    the game runs silent.
 
-Each release of [ratherDashing/pokedaisy-3ds](https://github.com/ratherDashing/pokedaisy-3ds/releases) has a QR code of
-its `.cia`: FBI > Remote Install > Scan QR Code installs it from there. GBA games run on armGBA (the submodule is its
+This fork publishes no builds: the steps above are for one you built yourself. For a build to install, see the official
+project, [lidor30/pokedaisy](https://github.com/lidor30/pokedaisy). GBA games run on armGBA (the submodule is its
 `3ds-v0.0.3-alpha` release) and Game Boy and Game Boy Color games on the Gambatte that armGBA carries; see "Licences"
 below for where that leaves a build that is passed on.
 
@@ -342,8 +348,8 @@ PokeDaisy is GPL-3.0 (`NOTICE`). armGBA's core, its libretro layer and its 3DS h
 combined with GPL-3.0 code and conveyed under it. **Gambatte is GPL-2.0 only** (every source file says "version 2 as
 published", none "or later"), and GPL-2.0-only code can't be conveyed in one program with GPL-3.0 code. So a build
 that holds Gambatte - the default, with Game Boy and Game Boy Color games - is outside what either licence grants once
-it is passed on. The alpha releases of ratherDashing/pokedaisy-3ds are published with that unresolved, so that the port
-can be tried, and will be withdrawn if a copyright holder asks. `NOTICE` has the details and what would settle it.
+it is passed on. This fork's two alpha releases were withdrawn on 2026-11-12 and it publishes no builds. `NOTICE` has
+the details and what would settle it.
 
 ## Next steps
 
