@@ -10,6 +10,10 @@
 void host_log_open(const char* path);
 void host_log(const char* format, ...) __attribute__((format(printf, 1, 2)));
 void host_log_close(void);
+#ifdef PD_LOG_URL
+// A diagnosis build only (make LOG_URL=http://<host>:<port>/log, never a release): sends the file there, named `name`.
+void host_log_upload(const char* path, const char* name);
+#endif
 // pd_emu_host.log.
 void host_emu_log(void* ctx, const char* line);
 

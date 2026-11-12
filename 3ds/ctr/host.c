@@ -82,6 +82,44 @@ void host_log_close(void) {
     logFile = NULL;
 }
 
+#ifdef PD_LOG_URL
+void* readFile(const char* path, size_t* size);
+
+void host_log_upload(const char* path, const char* name) {
+    size_t size = 0;
+    char* data = readFile(path, &size);
+    if (!data || !size) {
+        free(data);
+        return;
+    }
+    // The http service holds a POST's body in memory shared with it.
+    if (R_FAILED(httpcInit(1 << 20))) {
+        free(data);
+        return;
+    }
+    size_t most = 768 * 1024; // the end, if it's long
+    if (size > most) {
+        memmove(data, data + size - most, most);
+        size = most;
+    }
+    char url[256];
+    snprintf(url, sizeof(url), "%s?name=%s", PD_LOG_URL, name);
+    httpcContext context;
+    u32 status = 0;
+    Result rc = httpcOpenContext(&context, HTTPC_METHOD_POST, url, 0);
+    if (R_SUCCEEDED(rc)) {
+        httpcAddRequestHeaderField(&context, "Content-Type", "text/plain");
+        httpcAddPostDataRaw(&context, (const u32*) data, size);
+        rc = httpcBeginRequest(&context);
+        if (R_SUCCEEDED(rc)) rc = httpcGetResponseStatusCodeTimeout(&context, &status, 3000000000ull);
+        httpcCloseContext(&context);
+    }
+    host_log("log upload: %s: %08lX, HTTP %lu", name, (unsigned long) rc, (unsigned long) status);
+    httpcExit();
+    free(data);
+}
+#endif
+
 void host_emu_log(void* ctx, const char* line) {
     (void) ctx;
     host_log("%s", line);

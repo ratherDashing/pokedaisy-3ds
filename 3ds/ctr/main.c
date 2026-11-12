@@ -101,6 +101,18 @@ static float audioRate = 1.0f, audioRateSet = 1.0f, audioMade = 1.0f;
 static u64 audioLast;
 static unsigned audioGaps, audioDrops; // the queue ran dry / had no room, for the dev build's stat
 
+#ifdef PD_LOG_URL
+// A diagnosis build (make LOG_URL=..., never a release): each second's timing kept in memory, so that writing it
+// can't disturb what it measures, and put in the log when the game closes; host.c sends the log to LOG_URL.
+static char diagText[128 * 1024];
+static size_t diagLen;
+static struct {
+    unsigned passes, late, none, twice, queueMin;
+    u64 worstPass, core, worstCore, ui, worstUi, compiled, warmed;
+} diag = { .queueMin = 99 };
+static u64 diagLastTop;
+#endif
+
 // A game under full speed makes its sound too slowly, and a dry queue is a hole in the music, several a second: that was
 // the crunch. So the channel follows how fast the chunks really come: the sound plays as slowly as the game runs, a slow
 // glide rather than a gap, and at full speed the rate is exactly 1 again.
@@ -141,6 +153,9 @@ static ndspWaveBuf* audio_next(void) {
         return NULL;
     }
     if (!queued) audioGaps++;
+#ifdef PD_LOG_URL
+    if ((unsigned) queued < diag.queueMin) diag.queueMin = (unsigned) queued;
+#endif
     audio_follow(queued);
     bufferId = free;
     ndspWaveBuf* b = &dspBuffer[free];
@@ -520,7 +535,20 @@ static bool run_game(const char* file) {
     u64 loopStart = svcGetSystemTick();
 #endif
 
+    // What a pass of this loop takes without compiling, in ticks: the largest of late, forgotten slowly. What is left
+    // of a frame's time is what armGBA's recompiler may spend compiling in it; past that it steps through new code and
+    // compiles it in a later frame. Without the limit a step into new code (a door, a new map's scripts) compiled it
+    // all in one frame, the frame ran long and the sound queue ran dry: a crackle.
+    const double framePeriod = (double) SYSCLOCK_ARM11 * 4481136.0 / 268111856.0;
+    const double tickMs = (double) SYSCLOCK_ARM11 / 1000.0;
+    double typicalWork = framePeriod / 2;
+
     while ((appRunning = aptMainLoop())) {
+        u64 passTop = svcGetSystemTick();
+        u64 compiledAtTop = pd_emu_compile_ticks();
+        double compileBudget = framePeriod - typicalWork - 1.5 * tickMs; // the 1.5 ms: handing the frame to the GPU
+        if (compileBudget < 0.25 * tickMs) compileBudget = 0.25 * tickMs;
+        if (compileBudget > 6.0 * tickMs) compileBudget = 6.0 * tickMs;
         hidScanInput();
         u32 injected = devlink_keys();
         u32 held = hidKeysHeld() | injected, down = hidKeysDown() | (injected & ~lastInjected);
@@ -612,6 +640,7 @@ static bool run_game(const char* file) {
         struct pd_input in = { .held = gba_keys(held & ~withheld), .down = gba_keys(down & ~withheld),
                                .quickMenu = (down & KEY_Y) && !uiPtr->keyFocus,
                                .ffHeld = held & KEY_ZR, .stickAngle = stick_angle() };
+        pd_emu_compile_budget((held & KEY_ZR) || session.ff ? ~0ull : (uint64_t) compileBudget);
         DEV_MARK(coreStart);
         u64 busyStart = svcGetSystemTick();
         u64 tickNow = osGetTime();
@@ -624,6 +653,23 @@ static bool run_game(const char* file) {
         if (frames) pd_session_set_video(&session, gpu_frame_done());
         audioMuted = session.ff;
         busyTicks += svcGetSystemTick() - busyStart;
+#ifdef PD_LOG_URL
+        u64 diagCoreEnd = svcGetSystemTick();
+        {
+            u64 took = diagCoreEnd - busyStart;
+            diag.core += took;
+            if (took > diag.worstCore) diag.worstCore = took;
+            diag.passes++;
+            if (session.frame == before) diag.none++;
+            if (session.frame - before >= 2) diag.twice++;
+            if (diagLastTop) {
+                u64 pass = passTop - diagLastTop;
+                if (pass > diag.worstPass) diag.worstPass = pass;
+                if (pass > (u64) (20.0 * tickMs)) diag.late++;
+            }
+            diagLastTop = passTop;
+        }
+#endif
         DEV_MARK(uiStart);
 
         fpsFrames += (unsigned) frames;
@@ -635,11 +681,27 @@ static bool run_game(const char* file) {
             // The game's own core, how much of the last second it was busy: 100 and the game can't keep up.
             unsigned cpu = (unsigned) (busyTicks / (SYSCLOCK_ARM11 / 1000) * 100 / (now - fpsStart));
             perfPicture = settings.showPerf ? pd_session_perf((unsigned) ((u64) fpsFrames * 10000 / (now - fpsStart)), cpu > 100 ? 100 : cpu, &perfWidth) : NULL;
-#ifdef PD_AUTOTEST
-            host_log("speed: %u frames in %u ms, core busy %u%%, sound gaps %u drops %u rate %u", fpsFrames, (unsigned) (now - fpsStart), cpu, audioGaps,
-                     audioDrops, (unsigned) (audioRate * 1000));
-            audioGaps = audioDrops = 0;
+            // The test build logs every second; a player's build only a second whose sound broke, for a report.
+#ifndef PD_AUTOTEST
+            if (audioGaps || audioDrops)
 #endif
+                host_log("speed: %u frames in %u ms, core busy %u%%, sound gaps %u drops %u rate %u", fpsFrames, (unsigned) (now - fpsStart), cpu,
+                         audioGaps, audioDrops, (unsigned) (audioRate * 1000));
+#ifdef PD_LOG_URL
+            if (diagLen + 200 < sizeof(diagText)) {
+                #define MS10(t) ((unsigned) ((t) * 10 / (SYSCLOCK_ARM11 / 1000)))
+                diagLen += (size_t) snprintf(diagText + diagLen, sizeof(diagText) - diagLen,
+                    "%u f%u gaps%u drops%u rate%u q%u | passes%u late%u none%u twice%u worst%u | core%u worst%u ui%u worst%u compile%u warm%u (0.1 ms)\n",
+                    (unsigned) (now / 1000 % 100000), fpsFrames, audioGaps, audioDrops, (unsigned) (audioRate * 1000), diag.queueMin,
+                    diag.passes, diag.late, diag.none, diag.twice, MS10(diag.worstPass),
+                    diag.passes ? MS10(diag.core / diag.passes) : 0, MS10(diag.worstCore),
+                    diag.passes ? MS10(diag.ui / diag.passes) : 0, MS10(diag.worstUi), MS10(diag.compiled), MS10(diag.warmed));
+                #undef MS10
+            }
+            memset(&diag, 0, sizeof(diag));
+            diag.queueMin = 99;
+#endif
+            audioGaps = audioDrops = 0;
             busyTicks = 0;
             fpsFrames = 0;
             fpsStart = now;
@@ -661,6 +723,24 @@ static bool run_game(const char* file) {
         gpu_set_wide_hole(hole->x, hole->y, hole->w, hole->h, hole->gameX, hole->gameY);
         if (session.overlayDirty) gpu_set_overlay(pd_session_overlay(&session));
         gpu_show_overlay(session.overlayShown, session.overlayDim);
+        {
+            u64 nowTicks = svcGetSystemTick();
+            double work = (double) (nowTicks - passTop) - (double) (pd_emu_compile_ticks() - compiledAtTop);
+            if (frames == 1 && work < 3 * framePeriod) typicalWork = work > typicalWork ? work : typicalWork - (typicalWork - work) / 32;
+            // What is left of the frame's time goes to armGBA's warm list (the blocks the game ran last time), a block
+            // at a time, so that they are compiled before the game reaches them.
+#ifdef PD_LOG_URL
+            u64 uiTook = nowTicks - diagCoreEnd;
+            diag.ui += uiTook;
+            if (uiTook > diag.worstUi) diag.worstUi = uiTook;
+            diag.compiled += pd_emu_compile_ticks() - compiledAtTop;
+            u64 warmStart = nowTicks;
+#endif
+            while (!session.ff && (double) (nowTicks - passTop) + 2.0 * tickMs < framePeriod && pd_emu_warm_one()) nowTicks = svcGetSystemTick();
+#ifdef PD_LOG_URL
+            diag.warmed += nowTicks - warmStart;
+#endif
+        }
         STAGE(3);
         gpu_draw(true, pd_session_screen(&session));
         STAGE(4);
@@ -702,6 +782,11 @@ static bool run_game(const char* file) {
     // Writes the save if the game changed it, and armGBA's warm list.
     core->deinit(core);
     STAGE(0);
+#ifdef PD_LOG_URL
+    host_log("diag: one line a second, times in 0.1 ms\n%s", diagText);
+    diagLen = 0;
+    diagText[0] = 0;
+#endif
     host_log("game: closed");
     return appRunning;
 }
@@ -813,6 +898,9 @@ int main(void) {
     osSetSpeedupEnable(true);
     make_dirs();
     host_log_open("sdmc:" BASE_DIR "/log.txt");
+#ifdef PD_LOG_URL
+    host_log_upload("sdmc:" BASE_DIR "/log-prev.txt", "pokedaisy-prev");
+#endif
     host_log("PokeDaisy 3DS (armGBA core), %s%s, heap %lu KiB, linear %lu KiB", host_is_new_3ds() ? "New 3DS" : "old 3DS",
              host_is_emulator() ? ", in an emulator" : "", (unsigned long) host_heap_size() >> 10, (unsigned long) linearSpaceFree() >> 10);
     // armGBA's recompiler and its drawing on other cores need the New 3DS: the original models are refused here, not
@@ -848,6 +936,9 @@ int main(void) {
     audio_exit();
     host_log("exit");
     host_log_close();
+#ifdef PD_LOG_URL
+    host_log_upload("sdmc:" BASE_DIR "/log.txt", "pokedaisy");
+#endif
     gpu_exit();
     return 0;
 }

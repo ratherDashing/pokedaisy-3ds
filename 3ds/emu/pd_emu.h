@@ -59,4 +59,12 @@ enum pd_emu_state_result pd_emu_load_state(struct mCore* core, const char* path)
 // Writes the save file now if the game has written to it since the last time.
 void pd_emu_flush_save(struct mCore* core);
 
+// armGBA's recompiler and the frame's time (the 3DS; nothing elsewhere). The host says each frame how many of the
+// clock's ticks may go to compiling new code in it (~0: no limit, the default); compile_ticks is what has gone to it
+// so far. warm_one compiles one block of the game's warm list (what it ran last time) and says whether one was left:
+// for the time a frame has spare.
+void pd_emu_compile_budget(uint64_t ticks);
+uint64_t pd_emu_compile_ticks(void);
+bool pd_emu_warm_one(void);
+
 #endif

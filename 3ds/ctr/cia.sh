@@ -6,5 +6,5 @@ set -eu
 MAKEROM="${1:-makerom}"
 B=build-release
 "$MAKEROM" -f cia -o pokedaisy.cia -elf "$B/pokedaisy.elf" -rsf "$B/pokedaisy.rsf" -target t -exefslogo \
-    -icon "$B/icon.icn" -banner "$B/banner.bnr" -major 0 -minor 0 -micro 1
+    -icon "$B/icon.icn" -banner "$B/banner.bnr" -major 0 -minor 0 -micro 2
 echo "built pokedaisy.cia"

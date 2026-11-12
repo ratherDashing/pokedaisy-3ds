@@ -29,6 +29,33 @@ extern bool gameBoy;
 #if defined(__3DS__)
 void jitWarmLoad(const char* path);
 void jitWarmSave(const char* path);
+bool jitWarmOne(void);
+extern uint64_t jitCompileTicks, jitCompileBudget, jitCompileFrameStart;
+
+void pd_emu_compile_budget(uint64_t ticks) {
+    jitCompileFrameStart = jitCompileTicks;
+    jitCompileBudget = ticks;
+}
+
+uint64_t pd_emu_compile_ticks(void) {
+    return jitCompileTicks;
+}
+
+bool pd_emu_warm_one(void) {
+    return !gameBoy && jitWarmOne();
+}
+#else
+void pd_emu_compile_budget(uint64_t ticks) {
+    (void) ticks;
+}
+
+uint64_t pd_emu_compile_ticks(void) {
+    return 0;
+}
+
+bool pd_emu_warm_one(void) {
+    return false;
+}
 #endif
 
 // The views the shared code reads the machine through: the shim headers' `struct GBA` / `struct GB`, declared here
@@ -134,6 +161,28 @@ static void emu_log(const char* format, ...) {
     line[strcspn(line, "\n")] = 0;
     E.host.log(E.host.ctx, line);
 }
+
+#if defined(__3DS__)
+// The game's warm list (the blocks it ran last time, for the recompiler to prepare in spare time), as armGBA's
+// jitWarmSave wrote it: a magic word, its mark of the game, a count, and the pairs. Read here rather than by
+// jitWarmLoad, which wants its mark of the game to match and found it didn't from one run to the next, so no list was
+// ever used; the file is named by the whole game's CRC, which says more.
+static void warm_load(const char* path) {
+    if (!gba || !gba->jit) return;
+    FILE* f = fopen(path, "rb");
+    if (!f) return;
+    uint32_t head[3];
+    if (fread(head, 4, 3, f) == 3 && head[0] == 0x31574741 && head[2] && head[2] <= 1 << 16) {
+        uint32_t* pairs = malloc((size_t) head[2] * 8);
+        if (pairs && fread(pairs, 8, head[2], f) == head[2]) {
+            jitWarmGive(gba, pairs, head[2]);
+            emu_log("warm list: %lu blocks from %s", (unsigned long) head[2], path);
+        }
+        free(pairs);
+    }
+    fclose(f);
+}
+#endif
 
 uint32_t doCrc32(const void* buf, size_t size) {
     static uint32_t table[256];
@@ -865,7 +914,9 @@ struct mCore* pd_emu_load(const char* romPath, const char* savePath, const struc
 #if defined(__3DS__)
         if (E.host.workDir) {
             snprintf(E.warmPath, sizeof(E.warmPath), "%s/%08lX.warm", E.host.workDir, (unsigned long) E.romCrc);
-            jitWarmLoad(E.warmPath);
+            // Not yet: with the list given, the game stood still in one of two runs in Azahar some seconds in (the main
+            // loop inside the core). Without it, none in three; so the list waits for that to be found.
+            if (0) warm_load(E.warmPath);
         }
 #endif
     } else {

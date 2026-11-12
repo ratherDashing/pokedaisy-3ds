@@ -4,6 +4,8 @@
 #
 #   make                 pokedaisy.3dsx
 #   make VARIANT=dev     pokedaisy-dev.3dsx: the Wi-Fi link (devlink.c), its own SD folder
+#   make LOG_URL=http://<host>:<port>/log   a diagnosis build: each second's timing kept and, with the log, sent there
+#                        when the app closes and starts. Never a release; rebuild main.c and host.c without it after.
 #   make VARIANT=test    pokedaisy-test.3dsx: a script instead of hands (autotest.h), for the Azahar emulator
 #   make cia             pokedaisy.cia as well (makerom and bannertool on the PATH)
 
@@ -81,7 +83,7 @@ OBJ := $(PD_OBJ) $(WIDE_OBJ) $(GLUE_OBJ) $(HOST_OBJ) $(CORE_OBJ) $(LIBRETRO_OBJ)
 
 # The seam's headers stand where mGBA's did (emu/include), so the code shared with the mGBA hosts builds unchanged.
 PD_INC := -I$(D3)/emu/include -I$(D3)/core -I$(REPO)/linux -I$(CPP)
-$(PD_OBJ):       EXTRA := -O2 -Wall -Wextra $(PD_INC) $(DEFS) -DM_CORE_GBA -DM_CORE_GB -DPK_WIDE_NO_GUARD -DPK_WIDE_CACHE
+$(PD_OBJ):       EXTRA := -O2 -Wall -Wextra $(PD_INC) $(DEFS) $(if $(LOG_URL),-DPD_LOG_URL='"$(LOG_URL)"') -DM_CORE_GBA -DM_CORE_GB -DPK_WIDE_NO_GUARD -DPK_WIDE_CACHE
 $(WIDE_OBJ):     EXTRA := -O2 -Wall $(PD_INC) -DM_CORE_GBA -DM_CORE_GB -DPK_WIDE_NO_GUARD -DPK_WIDE_CACHE
 $(GLUE_OBJ):     EXTRA := -O2 -Wall -Wextra $(PD_INC) $(ARMGBA_GLUE_INC)
 $(HOST_OBJ):     EXTRA := -O2 -Wall -I$(ARMGBA)/src -I$(ARMGBA)/libretro $(ARMGBA_ARCHIVE_INC)
@@ -136,7 +138,7 @@ $(BUILD)/pokedaisy.rsf: $(ARMGBA)/platform/3ds/armgba.rsf
 cia-parts: $(BUILD)/$(TARGET).elf $(BUILD)/banner.bnr $(BUILD)/icon.icn $(BUILD)/pokedaisy.rsf
 $(TARGET).cia: cia-parts
 	@$(MAKEROM) -f cia -o $@ -elf $(BUILD)/$(TARGET).elf -rsf $(BUILD)/pokedaisy.rsf -target t -exefslogo -icon $(BUILD)/icon.icn \
-	         -banner $(BUILD)/banner.bnr -major 0 -minor 0 -micro 1
+	         -banner $(BUILD)/banner.bnr -major 0 -minor 0 -micro 2
 	@echo built $@
 cia: $(TARGET).cia
 
