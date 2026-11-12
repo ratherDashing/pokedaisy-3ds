@@ -619,6 +619,20 @@ static bool run_game(const char* file) {
         // X on the field sends the buttons to the companion (the app's bottom focus), elsewhere it's BACK; Y the QUICK
         // MENU; ZL the tab before. With the buttons on the companion L / R step the tabs, the D-pad and A its cursor;
         // X, START, or B with nothing left to go back from bring them back.
+        // X / Y BUTTONS: TURBO A / B takes X and Y for the game; the companion and the QUICK MENU are then ZL + X and
+        // ZL + Y, and ZL alone (let go without either) is still the tab before.
+        bool turbo = settings.turboXY;
+        static bool zlUsed;
+        static u32 lastHeld;
+        bool wantFocus = down & KEY_X, wantQuick = down & KEY_Y, wantPrevTab = down & KEY_ZL;
+        if (turbo) {
+            if (down & KEY_ZL) zlUsed = false;
+            wantFocus = wantFocus && (held & KEY_ZL);
+            wantQuick = wantQuick && (held & KEY_ZL);
+            if (wantFocus || wantQuick) { zlUsed = true; withheld |= KEY_X | KEY_Y; }
+            wantPrevTab = (lastHeld & ~held & KEY_ZL) && !zlUsed;
+        }
+        lastHeld = held;
         if (uiPtr->keyFocus) {
             static const u32 DIRS[4] = { KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT };
             static int heldFor[4];
@@ -636,7 +650,7 @@ static bool run_game(const char* file) {
             if (down) session.redraw = true;
             withheld |= held;
         } else {
-            if (down & KEY_X) {
+            if (wantFocus) {
                 if (pd_session_can_focus(&session)) {
                     pd_session_set_focus(&session, true);
                     withheld |= held;
@@ -645,7 +659,7 @@ static bool run_game(const char* file) {
                 }
                 session.redraw = true;
             }
-            if (down & KEY_ZL) { pd_ui_next_tab(uiPtr, -1); session.redraw = true; }
+            if (wantPrevTab) { pd_ui_next_tab(uiPtr, -1); session.redraw = true; }
         }
         // Keys pressed on the companion stay away from the game until they're let go.
         withheld &= held;
@@ -681,8 +695,20 @@ static bool run_game(const char* file) {
         }
         if (leave) break;
 
-        struct pd_input in = { .held = gba_keys(held & ~withheld), .down = gba_keys(down & ~withheld),
-                               .quickMenu = (down & KEY_Y) && !uiPtr->keyFocus,
+        // Turbo: 15 presses a second, two passes down and two up, starting with a press.
+        u32 gameHeld = held & ~withheld, gameDown = down & ~withheld;
+        static unsigned turboPass;
+        u32 turboKeys = turbo ? gameHeld & (KEY_X | KEY_Y) : 0;
+        if (turboKeys) {
+            u32 as = (turboKeys & KEY_X ? KEY_A : 0) | (turboKeys & KEY_Y ? KEY_B : 0);
+            if (turboPass % 4 < 2) gameHeld |= as;
+            if (turboPass % 4 == 0) gameDown |= as;
+            turboPass++;
+        } else {
+            turboPass = 0;
+        }
+        struct pd_input in = { .held = gba_keys(gameHeld), .down = gba_keys(gameDown),
+                               .quickMenu = wantQuick && !uiPtr->keyFocus,
                                .ffHeld = held & KEY_ZR, .stickAngle = stick_angle() };
         pd_emu_compile_budget(session.ffFast ? ~0ull : (uint64_t) compileBudget);
         // One owed frame a pass, and only while a second frame fits in the refresh: a game under speed owes nothing.

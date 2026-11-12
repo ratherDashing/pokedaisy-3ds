@@ -32,6 +32,7 @@ void pd_settings_defaults(struct pd_settings* s) {
     s->gameVolume = 100;
     s->gameMuted = false;
     s->autoRun = false;
+    s->turboXY = true;
     s->darkMode = false;
     s->ffNormal = false;
     s->cheats = false;
@@ -114,7 +115,7 @@ bool pd_settings_load(struct pd_settings* s, const char* path) {
             bool* b = !strcmp(key, "ffaudio") ? &s->ffAudio : !strcmp(key, "rewind") ? &s->rewind
                     : !strcmp(key, "runindoors") ? &s->runIndoors : !strcmp(key, "nohints") ? &s->hideHints
                     : !strcmp(key, "onetap") ? &s->oneTapMoves : !strcmp(key, "mute") ? &s->gameMuted
-                    : !strcmp(key, "autorun") ? &s->autoRun : NULL;
+                    : !strcmp(key, "autorun") ? &s->autoRun : !strcmp(key, "turboxy") ? &s->turboXY : NULL;
             if (b && int_in(value, 0, 1, &on)) *b = on;
         }
     }
@@ -134,6 +135,7 @@ bool pd_settings_save(const struct pd_settings* s, const char* path) {
     fprintf(f, "hudlayout=%d\nhudlook=%d\nhudsize=%d\n", s->hudLayout, s->hudLook, s->hudSize);
     fprintf(f, "scaling=%d\nffaudio=%d\nrewind=%d\nrunindoors=%d\n", s->scaling, s->ffAudio ? 1 : 0,
             s->rewind ? 1 : 0, s->runIndoors ? 1 : 0);
+    fprintf(f, "turboxy=%d\n", s->turboXY ? 1 : 0);
     fprintf(f, "quickbtn=%d\ncompanionbtn=%d\nhudbtn=%d\n", s->quickBtn, s->companionBtn, s->hudBtn);
     fprintf(f, "dark=%d\ntheme=%d\nffnormal=%d\ncheats=%d\n", s->darkMode, s->theme, s->ffNormal, s->cheats);
     fprintf(f, "speed=%d\nvolume=%d\nnohints=%d\nonetap=%d\nmute=%d\nautorun=%d\nperf=%d\n", s->gameSpeed,

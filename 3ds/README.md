@@ -107,7 +107,7 @@ can't run melonDS), and no original 3DS / 3DS XL / 2DS: the app says so there an
 - **Library**: the app's rail, view pills and tiles.
 - **Battle controls**: FIGHT / BAG / RUN / POKéMON, the moves, the party to send in (BEST / OUT), ONE-TAP MOVES,
   on the GBA games with their handlers known and on every Game Boy game (its 2x2 menu in the cart's own words).
-- **QUICK MENU** (Y): PC, FLY, REPEL, BIKE, WILD, states, FF. The Game Boy games have FLY and WILD and Crystal's PC
+- **QUICK MENU** (ZL + Y): PC, FLY, REPEL, BIKE, WILD, states, FF. The Game Boy games have FLY and WILD and Crystal's PC
   (`GbField`); Yellow's PC from anywhere answers "You can't do that now" (see "Not here yet").
 - The **HUD** (party, minimap, balls, Repel steps) over the game's picture on the field.
 - **BOXES**: the PC's boxes live, in FireRed's and Emerald's colours and wallpapers; encrypted, plain and CFRU
@@ -156,9 +156,11 @@ speed. `stat` on the dev link reports `gaps`, `drops` and the `rate`; the test b
 |---|---|
 | A / B / START / SELECT / L / R / D-pad or circle pad | the GBA's buttons |
 | Touch screen | the companion |
-| Y | QUICK MENU (the circle pad aims the ring) |
-| X | on the field: the buttons go to the companion, a silver strip on the game pointing down at it (L / R step its tabs, the D-pad and A its cursor; X, START, or B with nothing left to go back from bring them back). Elsewhere companion back |
-| ZL (New 3DS) | previous companion tab |
+| X / Y | turbo A / turbo B: held, the button is pressed 15 times a second (SETTINGS > X / Y BUTTONS: TURBO A / B) |
+| ZL + Y (New 3DS) | QUICK MENU (the circle pad aims the ring) |
+| ZL + X (New 3DS) | on the field: the buttons go to the companion, a silver strip on the game pointing down at it (L / R step its tabs, the D-pad and A its cursor; X, START, or B with nothing left to go back from bring them back). Elsewhere companion back |
+| ZL alone (New 3DS) | previous companion tab, when let go |
+| X / Y BUTTONS: MENUS | Y is the QUICK MENU and X the companion button without ZL, and there is no turbo |
 | ZR (New 3DS) | fast-forward while held |
 | START on the game list | quit to the Homebrew Launcher |
 

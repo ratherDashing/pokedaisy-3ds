@@ -342,6 +342,9 @@ void pd_session_start(struct pd_session* s, struct mCore* core, const uint32_t* 
     s->host.expandGame = false;
     s->host.hasHud = true;
     s->host.hasPerf = true;
+#ifdef __3DS__
+    s->host.hasTurboXY = true;
+#endif
     s->host.fullSettings = true;
     s->gbField = !gba && s->game.cfg ? gb_field_find(s->rom, s->romSize) : NULL;
     s->host.wildSupported = s->wildSwitch != 0 || s->gbField;

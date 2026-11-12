@@ -231,6 +231,8 @@ void ui_settings_tab(struct pd_ui* ui, struct pd_canvas* c, const struct pd_game
         setting(ui, c, ix, &y, iw, SETTING_FILTER, "FILTER", st->lcdFilter ? "LCD" : "OFF");
     if (host && host->hasQuickMenu)
         setting(ui, c, ix, &y, iw, SETTING_QUICK_MENU, "QUICK MENU", st->quickGrid ? "GRID" : "RING");
+    if (host && host->hasTurboXY)
+        setting(ui, c, ix, &y, iw, SETTING_TURBO_XY, "X / Y BUTTONS", st->turboXY ? "TURBO A / B" : "MENUS");
     if (host && host->hasButtonRows) {
         static const char* const NAMES[PD_BUTTONS] = {"X", "Y", "L2", "R2", "NONE"};
         setting(ui, c, ix, &y, iw, SETTING_QUICK_BTN, "QUICK MENU BUTTON", NAMES[st->quickBtn]);
