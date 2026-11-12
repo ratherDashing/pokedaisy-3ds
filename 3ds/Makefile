@@ -138,19 +138,20 @@ tables:
 	python3 tools/gen_icon.py
 	python3 tools/gen_icons.py
 
-# The repo is mounted whole: the build needs third_party/mgba next to 3ds/.
+# The repo is mounted whole: the build needs third_party/armgba and the code shared with the app next to 3ds/. As
+# the user who runs make, so the files it leaves are theirs.
+CTR_MAKE = docker run --rm -u $$(id -u):$$(id -g) -v "$(REPO):/repo" -w /repo/3ds/ctr $(DEVKITARM_IMAGE) make -j4
 3ds:
-	docker run --rm -v "$(REPO):/repo" -w /repo/3ds/ctr $(DEVKITARM_IMAGE) \
-		bash -c "cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
-			-DCMAKE_TOOLCHAIN_FILE=/repo/third_party/mgba/src/platform/3ds/CMakeToolchain.txt \
-			&& cmake --build build -j$$(nproc) && cp build/pokedaisy.3dsx ."
+	$(CTR_MAKE)
 
 # The dev build: the Wi-Fi link (tools/pdlink.py) and an SD folder of its own. Never a player's build.
 3ds-dev:
-	docker run --rm -v "$(REPO):/repo" -w /repo/3ds/ctr $(DEVKITARM_IMAGE) \
-		bash -c "cmake -S . -B build-dev -DCMAKE_BUILD_TYPE=Release -DPD_DEV=ON \
-			-DCMAKE_TOOLCHAIN_FILE=/repo/third_party/mgba/src/platform/3ds/CMakeToolchain.txt \
-			&& cmake --build build-dev -j$$(nproc) && cp build-dev/pokedaisy.3dsx pokedaisy-dev.3dsx"
+	$(CTR_MAKE) VARIANT=dev
+
+# The test build: a script on the SD card instead of hands (ctr/autotest.h), for the Azahar emulator. Never a player's.
+.PHONY: 3ds-test
+3ds-test:
+	$(CTR_MAKE) VARIANT=test
 
 # pd_sim: the port's emulator (emu/: armGBA with its x86-64 recompiler, Gambatte), the real ROMs and the app's host
 # logic, no console (desktop/sim/). Plain make, a C and a C++ compiler and zlib: no CMake.
@@ -253,7 +254,7 @@ azahar-battle-test: 3ds fixture-roms
 	for s in $(AZAHAR_BATTLE_SHOTS); do convert xwd:$(BUILD)/azahar-battle/$$s.xwd -crop 640x500+320+230 $(BUILD)/azahar-battle/$$s.png; done
 
 clean:
-	rm -rf $(BUILD) ctr/build ctr/build-dev ctr/pokedaisy.3dsx ctr/pokedaisy-dev.3dsx
+	rm -rf $(BUILD) ctr/build-release ctr/build-dev ctr/build-test ctr/pokedaisy.3dsx ctr/pokedaisy-dev.3dsx ctr/pokedaisy-test.3dsx ctr/pokedaisy.cia
 
 # Optional host capability: the default 3DS settings remain available.
 $(BUILD)/pd_host_display_test: $(CORE_SRC) $(wildcard core/*.h) test/host_display_test.c

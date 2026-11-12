@@ -358,6 +358,7 @@ static void command(char* line) {
     } else if (!strcmp(cmd, "info")) {
         printf("core: %s, %s; frame %u\n", session.game.kind == PD_GAME_GB ? "Gambatte" : pd_emu_recompiling(session.core) ? "armGBA recompiler" : "armGBA interpreter",
                pd_emu_threaded(session.core) ? "threaded" : "one thread", session.frame);
+        printf("scene: %d (0 field, 1 text, 3 battle start, 4 off, 5 fade, 6 menu), wide fault %d, field flags 0x%x\n", pk_wide_scene(), pk_wide_fault(), session.fieldFlags);
     } else if (!strcmp(cmd, "state")) {
         print_state();
     } else if (!strcmp(cmd, "expect")) {

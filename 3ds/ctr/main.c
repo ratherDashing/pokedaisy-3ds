@@ -1,8 +1,7 @@
-// PokeDaisy for the Nintendo 3DS: the game (libmgba) on the top screen, the
-// companion (../core) on the bottom one. A homebrew .3dsx; see README.md.
+// PokeDaisy for the Nintendo 3DS: the game on the top screen (armGBA, and Gambatte for the Game Boy: ../emu), the
+// companion (../core) on the bottom one. A homebrew .3dsx for the New 3DS; see README.md.
 //
-// The screens are drawn by the GPU (gpu.c). Audio is ndsp, stereo PCM16 at the DSP's own rate, the blip buffers
-// resampled to the 3DS's refresh rate.
+// The screens are drawn by the GPU (gpu.c). Audio is ndsp, stereo PCM16, played at the rate the screen paces the game to.
 #include <3ds.h>
 
 #include <dirent.h>
@@ -16,14 +15,8 @@
 #include <sys/stat.h>
 #include <time.h>
 
-#include <mgba-util/vfs.h>
-#include <mgba/core/blip_buf.h>
-#include <mgba/internal/gba/gba.h>
-#include <mgba/core/config.h>
+// The port's own seam over armGBA and Gambatte, in mGBA's names (../emu/include): not mGBA's header.
 #include <mgba/core/core.h>
-#include <mgba/core/log.h>
-#include <mgba/core/serialize.h>
-#include <mgba/internal/gba/audio.h>
 
 #include "../core/pd_canvas.h"
 #include "../core/pd_game.h"
@@ -32,8 +25,9 @@
 #include "../core/pd_menu.h"
 #include "../core/pd_settings.h"
 #include "../core/pd_style.h"
+#include "../emu/pd_emu.h"
 #include "../host/pd_session.h"
-#include "../../app/src/main/cpp/pk_gb_audio.h"
+#include "host.h"
 #include "../../app/src/main/cpp/pk_host.h"
 #include "devlink.h"
 #include "../../app/src/main/cpp/pk_call.h"
@@ -49,6 +43,9 @@
 #define ROM_DIR BASE_DIR "/roms"
 #define BACKUP_DIR ROM_DIR "/pokedaisy-backups"
 #define STATE_DIR BASE_DIR "/states"
+// An optional gba_bios.bin (else armGBA's own BIOS), and what armGBA keeps for itself: each game's warm list.
+#define SYSTEM_DIR BASE_DIR "/system"
+#define WORK_DIR BASE_DIR "/armgba"
 #define SETTINGS_FILE "sdmc:" BASE_DIR "/settings.ini"
 #define MAX_BACKUPS 10
 #define MAX_ROMS 256
@@ -68,19 +65,13 @@ static uint32_t topPx[TOP_W * TOP_H];
 static uint32_t bottomPx[PD_UI_WIDTH * PD_UI_HEIGHT];
 static struct pd_settings settings;
 
-// --- logging: mGBA's default logger prints every unmapped I/O write ---
-
-static void noopLog(struct mLogger* log, int category, enum mLogLevel level, const char* format, va_list args) {
-    (void) log; (void) category; (void) level; (void) format; (void) args;
-}
-static struct mLogger silentLogger = { .log = noopLog, .filter = NULL };
-
 // --- audio ---
 
-// The DSP's own rate, 268111856 / 8192: a channel at any other one is resampled, and mGBA's frontend's 32768 through
-// NDSP_INTERP_NONE drops a sample every 800 or so, 40 small clicks a second under everything. Here a sample out is a sample
-// played.
-#define DSP_RATE 32728.4978f
+// armGBA and Gambatte make 32768 samples for each second of the game's own time, and the game runs a frame to a screen
+// refresh: its 59.7275 frames in the 59.8314 the top screen shows. So the channel plays that much faster, as
+// armGBA-3DS's own does, and the DSP's resampler (linear) takes it to its own 32728 Hz.
+#define SCREEN_HZ (268111856.0 / 4481136.0)
+#define DSP_RATE ((float) (PD_EMU_SAMPLE_RATE * SCREEN_HZ / PD_EMU_FPS))
 #define AUDIO_SAMPLES 384
 #define DSP_BUFFERS 8
 // How many chunks the queue keeps ahead, and how far either way it may wander before the rate moves.
@@ -97,7 +88,6 @@ static bool audioMuted; // while fast-forwarding
 static ndspWaveBuf dspBuffer[DSP_BUFFERS];
 static int16_t* audioBuf;
 static int bufferId;
-static struct mAVStream stream;
 static float audioRate = 1.0f, audioRateSet = 1.0f, audioMade = 1.0f;
 static u64 audioLast;
 static unsigned audioGaps, audioDrops; // the queue ran dry / had no room, for the dev build's stat
@@ -157,36 +147,19 @@ static void audio_send(ndspWaveBuf* b) {
     ndspChnWaveBufAdd(0, b);
 }
 
-// mGBA's GBA sound calls this in blip_add_delta's place (CMakeLists.txt).
-void pd_blip_delta(blip_t* blip, unsigned clock, int delta) {
-    if (delta) blip_add_delta(blip, clock, delta);
-}
-
-static void post_audio(struct mAVStream* s, blip_t* left, blip_t* right) {
-    (void) s;
-    ndspWaveBuf* b = hasSound && !audioMuted ? audio_next() : NULL;
-    if (!b) {
-        // Muted, or no room: this chunk goes rather than wait.
-        blip_clear(left);
-        blip_clear(right);
-        return;
-    }
-    blip_read_samples(left, b->data_pcm16, AUDIO_SAMPLES, true);
-    blip_read_samples(right, b->data_pcm16 + 1, AUDIO_SAMPLES, true);
-    audio_send(b);
-}
-
-// A Game Boy game's sound comes from pk_gb_audio (never its core's own audio channels): each full chunk into a free buffer.
-static struct pk_gb_audio gbAudio;
-static bool gbAudioOn;
-
-static void gb_audio_pump(void) {
-    if (!gbAudioOn) return;
+// The core's sound as each frame makes it (pd_emu_host.audio), cut into the DSP's chunks; a chunk with nowhere to go
+// (muted in fast-forward, no sound, or every buffer still queued) is dropped rather than waited for.
+static void emu_audio(void* ctx, const int16_t* stereo, size_t frames) {
+    (void) ctx;
     static int16_t chunk[AUDIO_SAMPLES * 2];
-    static int have;
-    for (;;) {
-        have += pk_gb_audio_read(&gbAudio, chunk + have * 2, AUDIO_SAMPLES - have);
-        if (have < AUDIO_SAMPLES) return;
+    static size_t have;
+    while (frames) {
+        size_t n = AUDIO_SAMPLES - have < frames ? AUDIO_SAMPLES - have : frames;
+        memcpy(chunk + have * 2, stereo, n * 2 * sizeof(int16_t));
+        have += n;
+        stereo += n * 2;
+        frames -= n;
+        if (have < AUDIO_SAMPLES) break;
         have = 0;
         ndspWaveBuf* b = hasSound && !audioMuted ? audio_next() : NULL;
         if (!b) continue;
@@ -197,8 +170,18 @@ static void gb_audio_pump(void) {
 
 static void audio_init(void) {
     // ndsp needs the DSP firmware dump (sdmc:/3ds/dspfirm.cdc); without it the
-    // game just runs silent.
-    if (ndspInit()) return;
+    // game just runs silent. An emulator does the DSP's work itself and has no firmware to give, but ndsp won't start
+    // without one: there, and never on a console, it gets a blank one (armGBA-3DS's way, from MW3DS's test setup).
+    Result rc = ndspInit();
+    if (R_FAILED(rc) && host_is_emulator()) {
+        static uint8_t blankFirmware[4096];
+        ndspUseComponent(blankFirmware, sizeof(blankFirmware), 0xFF, 0xFF);
+        rc = ndspInit();
+    }
+    if (R_FAILED(rc)) {
+        host_log("audio: ndspInit %08lX: no sdmc:/3ds/dspfirm.cdc? The game runs silent", (unsigned long) rc);
+        return;
+    }
     ndspSetOutputMode(NDSP_OUTPUT_STEREO);
     ndspSetOutputCount(1);
     ndspChnReset(0);
@@ -220,6 +203,7 @@ static void audio_init(void) {
         dspBuffer[i].nsamples = AUDIO_SAMPLES;
     }
     hasSound = true;
+    host_log("audio: ndsp up, %d-sample chunks at %.1f Hz", AUDIO_SAMPLES, (double) DSP_RATE);
 }
 
 static void audio_exit(void) {
@@ -237,6 +221,8 @@ static void make_dirs(void) {
     mkdir("sdmc:" ROM_DIR, 0777);
     mkdir("sdmc:" BACKUP_DIR, 0777);
     mkdir("sdmc:" STATE_DIR, 0777);
+    mkdir("sdmc:" SYSTEM_DIR, 0777);
+    mkdir("sdmc:" WORK_DIR, 0777);
 }
 
 // What the app plays: a GBA game, or a Game Boy / Color one.
@@ -409,11 +395,11 @@ struct game_files {
     char saveSd[520];
 };
 
-// mGBA's 3DS VFile takes the path on the SD card; stdio wants the sdmc: in front.
+// Twice the same: mGBA's 3DS VFile took the path without the sdmc: stdio wants.
 static void state_path(void* ctx, int slot, char* vf, size_t vfLen, char* path, size_t pathLen) {
     const struct game_files* f = ctx;
-    snprintf(vf, vfLen, STATE_DIR "/%s.ss%d", f->base, slot + 1);
-    snprintf(path, pathLen, "sdmc:%s", vf);
+    snprintf(path, pathLen, "sdmc:" STATE_DIR "/%s.ss%d", f->base, slot + 1);
+    snprintf(vf, vfLen, "%s", path);
 }
 
 static void backup_for_load(void* ctx) {
@@ -424,16 +410,6 @@ static void backup_for_load(void* ctx) {
 static void settings_changed(void* ctx) {
     (void) ctx;
     pd_settings_save(&settings, SETTINGS_FILE);
-}
-
-// A Game Boy cart's own screen, not a Super Game Boy border (pk_gb_config).
-static void pk_gb_settings(struct mCore* core) {
-    if (core->platform(core) != mPLATFORM_GB) return;
-    mCoreConfigSetIntValue(&core->config, "sgb.borders", 0);
-    core->reloadConfigOption(core, "sgb.borders", &core->config);
-    // mGBA's 0x100 overflows the GB mixer's int16 in loud passages (PK_GB_VOLUME).
-    mCoreConfigSetIntValue(&core->config, "volume", 0x80);
-    core->reloadConfigOption(core, "volume", &core->config);
 }
 
 static void cheat_path(void* ctx, uint32_t crc, char* path, size_t len) {
@@ -452,68 +428,47 @@ static bool run_game(const char* file) {
     char saveSd[520];
     snprintf(saveSd, sizeof(saveSd), "sdmc:%s", savePath);
 
-    struct VFile* rom = VFileOpen(romPath, O_RDONLY);
+    char romSd[520];
+    snprintf(romSd, sizeof(romSd), "sdmc:%s", romPath);
+    FILE* rom = fopen(romSd, "rb");
     if (!rom) {
         show_message("Couldn't open the game:", file);
         return true;
     }
     uint8_t header[0xC0] = { 0 };
-    rom->seek(rom, 0, SEEK_SET);
-    rom->read(rom, header, sizeof(header));
-    rom->seek(rom, 0, SEEK_SET);
+    size_t headerRead = fread(header, 1, sizeof(header), rom);
+    fseek(rom, 0, SEEK_END);
+    long romLength = ftell(rom);
+    fclose(rom);
     struct pd_game game;
-    pd_game_detect(&game, header, (size_t) rom->size(rom));
+    pd_game_detect(&game, header, headerRead == sizeof(header) && romLength > 0 ? (size_t) romLength : 0);
 
-    struct mCore* core = mCoreFindVF(rom);
-    if (!core || !core->init(core)) {
-        rom->close(rom);
-        show_message("Not a GBA game:", file);
-        return true;
-    }
-    mCoreInitConfig(core, NULL);
-    // mGBA's renderer on the New 3DS's third core, as its own 3DS front end has it.
-    bool isNew = false;
-    APT_CheckNew3DS(&isNew);
-    if (isNew) mCoreConfigSetIntValue(&core->config, "threadedVideo", 1);
-    core->setVideoBuffer(core, (color_t*) gpu_game_buffer(), GPU_GAME_STRIDE);
-    pk_gb_settings(core);
-    core->setAudioBufferSize(core, AUDIO_SAMPLES);
-    // Into mGBA's fixed 32 MB buffer: core->loadROM maps the file with linearAlloc, and the 15 MB of linear memory the
-    // GPU leaves can't hold a 16 MB game on a real console. This closes rom.
-    if (!mCorePreloadVF(core, rom)) {
-        core->deinit(core);
-        show_message("The game didn't load (too big?):", file);
-        return true;
-    }
-    // As mGBA's own 3DS front end has it (gui-runner.c): skips the busy loops games wait in. Without it FireRed takes 19 ms
-    // a frame on a New 3DS, 30 FPS; with it 9.
-    if (core->platform(core) == mPLATFORM_GBA) ((struct GBA*) core->board)->idleOptimization = IDLE_LOOP_DETECT;
+    // The save as it is, copied aside before anything can touch it (CLAUDE.md: save files are sacred).
     backup_save(base, saveSd);
-    struct VFile* save = VFileOpen(savePath, O_CREAT | O_RDWR);
-    if (save) core->loadSave(core, save);
-    bool gb = core->platform(core) == mPLATFORM_GB;
-    gpu_double_game(!gb);
-    // A game frame a refresh: its 59.73 frames' sound in the 59.83 the screen shows (both Game Boys' frames are the GBA's
-    // length in time). The Game Boy's had no such ratio and ran 0.17% over, a chunk thrown away every few seconds.
-    double ratio = GBAAudioCalculateRatio(1, 268111856.f / 4481136.f, 1);
     audioRate = audioRateSet = audioMade = 1.0f;
     audioLast = 0;
     if (hasSound) ndspChnSetRate(0, DSP_RATE);
-    if (gb) {
-        gbAudioOn = pk_gb_audio_attach(&gbAudio, core, DSP_RATE * ratio);
-    } else {
-        stream.postAudioBuffer = post_audio;
-        core->setAVStream(core, &stream);
-        if (hasSound) {
-            blip_set_rates(core->getAudioChannel(core, 0), core->frequency(core), DSP_RATE * ratio);
-            blip_set_rates(core->getAudioChannel(core, 1), core->frequency(core), DSP_RATE * ratio);
-        }
+    // armGBA: its recompiler, its renderer on the New 3DS's third and fourth cores and its mixer on the fourth, as in
+    // armGBA-3DS. Gambatte for a Game Boy game.
+    struct pd_emu_host emuHost = { .audio = emu_audio, .log = host_emu_log, .systemDir = "sdmc:" SYSTEM_DIR, .workDir = "sdmc:" WORK_DIR,
+                                   .threaded = host_is_new_3ds() };
+    char error[96] = "";
+    host_log("game: %s (%ld KiB), heap %lu KiB free", file, romLength >> 10, (unsigned long) host_heap_free() >> 10);
+    struct mCore* core = pd_emu_load(romSd, saveSd, &emuHost, error, sizeof(error));
+    if (!core) {
+        host_log("game: didn't load: %s", error);
+        show_message("The game didn't start:", error);
+        return true;
     }
-    core->reset(core);
+    core->setVideoBuffer(core, (color_t*) gpu_game_buffer(), GPU_GAME_STRIDE);
+    bool gb = core->platform(core) == mPLATFORM_GB;
+    gpu_double_game(!gb);
     unsigned videoW = 240, videoH = 160;
     core->desiredVideoDimensions(core, &videoW, &videoH);
     gpu_set_game_size((int) videoW, (int) videoH);
     pk_heal_rtc(core);
+    host_log("game: running, %s; heap %lu KiB free", gb ? "Gambatte" : pd_emu_recompiling(core) ? "armGBA's recompiler" : "armGBA's INTERPRETER (no executable memory)",
+             (unsigned long) host_heap_free() >> 10);
 
     static struct pd_session session;
     memset(&session, 0, sizeof(session));
@@ -521,9 +476,8 @@ static bool run_game(const char* file) {
     struct game_files gameFiles;
     snprintf(gameFiles.base, sizeof(gameFiles.base), "%s", base);
     snprintf(gameFiles.saveSd, sizeof(gameFiles.saveSd), "%s", saveSd);
-    bool wideThread = gpu_wide_thread(pk_wide_finish);
-    struct pd_session_host files = { state_path, backup_for_load, settings_changed, cheat_path, &gameFiles,
-                                     wideThread ? gpu_wide_go : NULL, wideThread ? gpu_wide_join : NULL, NULL };
+    // No thread for EXPAND: it's off in this build, and armGBA's renderer has both spare cores.
+    struct pd_session_host files = { state_path, backup_for_load, settings_changed, cheat_path, &gameFiles, NULL, NULL, NULL };
 #ifdef PD_DEV
     files.clock = svcGetSystemTick;
 #endif
@@ -533,6 +487,7 @@ static bool run_game(const char* file) {
     session.host.labels[1] = "SPEED";
     snprintf(session.host.values[1], sizeof(session.host.values[1]), "-");
     pd_session_start(&session, core, gpu_game_buffer(), &settings, &files);
+    host_log("game: session started (%s)", session.game.cfg ? "supported" : "not a game the companion knows");
     apply_volume();
     struct pd_ui* uiPtr = &session.ui;
     struct pd_host_info* hostPtr = &session.host;
@@ -652,8 +607,13 @@ static bool run_game(const char* file) {
         u64 busyStart = svcGetSystemTick();
         u64 tickNow = osGetTime();
         unsigned before = session.frame;
+#ifdef PD_AUTOTEST
+        if (session.frame < 400) host_log("loop: frame %u about to run", session.frame);
+#endif
         pd_session_tick(&session, &in, (unsigned) (tickNow - lastTick));
-        gb_audio_pump();
+#ifdef PD_AUTOTEST
+        if (session.frame <= 400) host_log("loop: frame %u ran", session.frame);
+#endif
         lastTick = tickNow;
         unsigned frames = session.frame - before;
         if (frames) pd_session_set_video(&session, gpu_frame_done());
@@ -670,6 +630,11 @@ static bool run_game(const char* file) {
             // The game's own core, how much of the last second it was busy: 100 and the game can't keep up.
             unsigned cpu = (unsigned) (busyTicks / (SYSCLOCK_ARM11 / 1000) * 100 / (now - fpsStart));
             perfPicture = settings.showPerf ? pd_session_perf((unsigned) ((u64) fpsFrames * 10000 / (now - fpsStart)), cpu > 100 ? 100 : cpu, &perfWidth) : NULL;
+#ifdef PD_AUTOTEST
+            host_log("speed: %u frames in %u ms, core busy %u%%, sound gaps %u drops %u rate %u", fpsFrames, (unsigned) (now - fpsStart), cpu, audioGaps,
+                     audioDrops, (unsigned) (audioRate * 1000));
+            audioGaps = audioDrops = 0;
+#endif
             busyTicks = 0;
             fpsFrames = 0;
             fpsStart = now;
@@ -692,6 +657,9 @@ static bool run_game(const char* file) {
         if (session.overlayDirty) gpu_set_overlay(pd_session_overlay(&session));
         gpu_show_overlay(session.overlayShown, session.overlayDim);
         gpu_draw(true, pd_session_screen(&session));
+#ifdef PD_AUTOTEST
+        if (session.frame <= 400) host_log("loop: drawn");
+#endif
         devlink_after_frame();
 #ifdef PD_DEV
         {
@@ -722,16 +690,14 @@ static bool run_game(const char* file) {
 #endif
     }
 
-    // A save the game is writing finishes, unheard, before the core stops; then deinit writes it back (the 3DS
-    // VFile's unmap flushes it).
+    // A save the game is writing finishes, unheard, before the core stops; then deinit writes the file.
     audioMuted = true;
     pk_finish_save(core, PK_FINISH_SAVE_FRAMES, NULL);
     audioMuted = false;
     if (hasSound) ndspChnWaveBufClear(0);
-    if (gbAudioOn) pk_gb_audio_detach(&gbAudio, core);
-    gbAudioOn = false;
-    gpu_wide_join();
+    // Writes the save if the game changed it, and armGBA's warm list.
     core->deinit(core);
+    host_log("game: closed");
     return appRunning;
 }
 
@@ -838,14 +804,28 @@ int main(void) {
         gfxExit();
         return 1;
     }
-    // The New 3DS's 804 MHz mode (a no-op on the original models).
+    // The New 3DS's 804 MHz mode.
     osSetSpeedupEnable(true);
-    mLogSetDefaultLogger(&silentLogger);
     make_dirs();
+    host_log_open("sdmc:" BASE_DIR "/log.txt");
+    host_log("PokeDaisy 3DS (armGBA core), %s%s, heap %lu KiB, linear %lu KiB", host_is_new_3ds() ? "New 3DS" : "old 3DS",
+             host_is_emulator() ? ", in an emulator" : "", (unsigned long) host_heap_size() >> 10, (unsigned long) linearSpaceFree() >> 10);
+    // armGBA's recompiler and its drawing on other cores need the New 3DS: the original models are refused here, not
+    // left to run at a fraction of full speed.
+    if (!host_is_new_3ds()) {
+        show_message("PokeDaisy needs a New 3DS,", "New 3DS XL or New 2DS XL.");
+        host_log_close();
+        gpu_exit();
+        return 0;
+    }
     pd_settings_load(&settings, SETTINGS_FILE);
     audio_init();
     mcuHwcInit();
     devlink_start();
+#ifdef PD_AUTOTEST
+    mkdir("sdmc:" BASE_DIR "/shots", 0777);
+    autotest_start("sdmc:" BASE_DIR "/autotest.txt", "sdmc:" BASE_DIR "/shots");
+#endif
     char file[256];
     while (pick_rom(file, sizeof(file))) {
         if (!run_game(file)) break;
@@ -860,6 +840,8 @@ int main(void) {
 #endif
     mcuHwcExit();
     audio_exit();
+    host_log("exit");
+    host_log_close();
     gpu_exit();
     return 0;
 }

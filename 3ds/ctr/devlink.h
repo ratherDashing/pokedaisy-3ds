@@ -50,6 +50,21 @@ bool devlink_chainload(void);
 // This console's address, for the splash ("" before Wi-Fi is up).
 const char* devlink_address(void);
 
+#elif defined(PD_AUTOTEST)
+
+// The test build's script stands in for the link (autotest.h).
+#include "autotest.h"
+static inline void devlink_start(void) {}
+static inline void devlink_stop(void) {}
+static inline uint32_t devlink_keys(void) { return autotest_keys(); }
+static inline bool devlink_touch(int* x, int* y) { return autotest_touch(x, y); }
+static inline bool devlink_take_launch(char* out, unsigned outLen) { return autotest_take_launch(out, outLen); }
+static inline bool devlink_take_leave(void) { return autotest_take_leave(); }
+static inline bool devlink_take_wild(int* species, int* level) { (void) species; (void) level; return false; }
+static inline bool devlink_take_opt(int* screen, int* aspect) { (void) screen; (void) aspect; return false; }
+static inline bool devlink_restart_wanted(void) { return autotest_quit_wanted(); }
+static inline void devlink_after_frame(void) { autotest_after_frame(); }
+
 #else
 
 static inline void devlink_start(void) {}
