@@ -31,6 +31,26 @@ The app shows every license below in full under Settings > LICENSES.
   its bundled libraries: blip_buf (GNU LGPL 2.1) and inih (BSD).
   app/src/main/cpp/pk_rewind.c is adapted from mGBA's src/core/rewind.c and
   stays under the MPL 2.0 (its header says so).
+- The 3DS port only (3ds/, built by 3ds/ctr/Makefile and 3ds/desktop/sim/Makefile; nothing here is in the Android
+  app or the Linux hosts, which run mGBA): armGBA (third_party/armgba, the ratherDashing/armGBA fork of
+  MagnominusGit/armGBA, branch 3ds at commit 49869e9), Copyright (c) 2026 Magnominus and the armGBA 3DS port
+  contributors, with code that follows mGBA's, Copyright (c) 2013-2016 Jeffrey Pfau - its core (src/), libretro
+  layer (libretro/) and 3DS host code (platform/3ds/source/jitmem.c, svc.s) under the Mozilla Public License 2.0
+  (third_party/armgba/LICENSES/MPL-2.0.txt; no file carries the "Incompatible With Secondary Licenses" notice, so
+  it may be combined with and conveyed under the GNU GPL) - https://github.com/ratherDashing/armGBA. Linked as it
+  is, unchanged. With it: libretro.h and libretro-common (the libretro team, MIT), the LZMA SDK's 7z reader (Igor
+  Pavlov, public domain), the Game Boy palettes and colour curves from SameBoy (Lior Halphon, MIT), and
+  Gambatte as extended by Gambatte-Speedrun (third_party/armgba/gambatte: sinamas and the
+  pokemon-speedrunning/gambatte-core authors), GNU GPL **version 2 only** (third_party/armgba/gambatte/COPYING;
+  its source files say "version 2 as published by the Free Software Foundation", without "or any later
+  version"), holding snes_spc (Shay Green, GNU LGPL 2.1 or later).
+  GPL-2.0-only code and this program's GPL-3.0 code cannot be conveyed together as one work: neither licence
+  permits the other's terms. A 3DS or simulator binary that links Gambatte - what 3ds/ builds - may therefore be
+  built and run for your own use but MUST NOT BE DISTRIBUTED. A distributable build needs one of: PokeDaisy's
+  copyright holder granting an exception for linking Gambatte, every Gambatte copyright holder allowing GPL 3,
+  or the Game Boy side built on a core whose licence allows it (mGBA's, MPL 2.0, as the other hosts use).
+  The port's own seam (3ds/emu/) is PokeDaisy's, GPL 3.0; its headers under 3ds/emu/include/mgba* are written
+  for this port and hold no mGBA code.
 - rcheevos (third_party/rcheevos), Copyright (c) 2018 RetroAchievements.org,
   MIT License - https://github.com/RetroAchievements/rcheevos
 - Optional Linux DS experiment only: DSperate (third_party/dsperate),

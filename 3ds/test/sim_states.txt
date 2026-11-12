@@ -1,0 +1,15 @@
+# STATES and fast-forward on the core (after sim_boot.txt): a state saved, the game moved on, the state loaded; a slot
+# with nothing in it refused; fast-forward's frames; sound made; the recompiler running. Run by `make sim-test`.
+info
+expect recompiler
+state-save 0
+press right 40
+run 30
+state-load 0
+expect load 1
+state-load 9
+expect load 0
+run 30
+ff 30
+expect audio
+state

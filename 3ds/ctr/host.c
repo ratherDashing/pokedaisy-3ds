@@ -15,9 +15,9 @@ u32 __stacksize__ = 512 * 1024;
 // libctru splits the app's memory evenly between the heap and linear memory (what the GPU and the DSP read), up to
 // 32 MiB of linear. Here the heap holds the game (up to 32 MiB), the recompiler's code (up to 24) and the copies of
 // the machine its render and sound threads draw from, while the screens' textures, the frames in flight and the sound
-// need about 6 MiB of linear memory: it gets 12, and the heap the rest, as far as the heap's address range goes (96
+// need about 5.5 MiB of linear memory (measured at start): it gets 8, and the heap the rest, as far as the heap's address range goes (96
 // MiB; asked for more, the allocation fails and the app stops before main - armGBA-3DS's finding on a New 3DS).
-#define LINEAR_WANTED (12u << 20)
+#define LINEAR_WANTED (8u << 20)
 extern char* fake_heap_start;
 extern char* fake_heap_end;
 u32 __ctru_heap;
@@ -171,7 +171,7 @@ static void watch_main(void* arg) {
     int same = 0;
     for (;;) {
         svcSleepThread(1000000000LL);
-        if (host_loops == last) {
+        if (host_stage && host_loops == last) { // stage 0: no game running
             if (++same <= 5 || same % 30 == 0) host_log("watchdog: the main loop has stood at stage %d / %d for %d s (loop %u)", host_stage, pd_emu_stage, same, last);
         } else {
             same = 0;

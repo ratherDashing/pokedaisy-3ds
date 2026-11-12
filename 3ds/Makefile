@@ -148,6 +148,16 @@ CTR_MAKE = docker run --rm -u $$(id -u):$$(id -g) -v "$(REPO):/repo" -w /repo/3d
 3ds-dev:
 	$(CTR_MAKE) VARIANT=dev
 
+# The .cia for the HOME Menu as well. makerom (Project_CTR) and bannertool aren't in the devkitARM image: with both in
+# TOOLS, bannertool runs there (ctr/Makefile's cia-parts) and makerom, whose release binaries want a newer glibc, in
+# ubuntu:24.04 (ctr/cia.sh).
+.PHONY: cia
+TOOLS ?= $(HOME)/3ds-tools/bin
+CTR_RUN = docker run --rm -u $$(id -u):$$(id -g) -v "$(REPO):/repo" -v "$(TOOLS):/tools:ro" -w /repo/3ds/ctr
+cia: 3ds
+	$(CTR_RUN) $(DEVKITARM_IMAGE) make cia-parts BANNERTOOL=/tools/bannertool
+	$(CTR_RUN) ubuntu:24.04 sh cia.sh /tools/makerom
+
 # The test build: a script on the SD card instead of hands (ctr/autotest.h), for the Azahar emulator. Never a player's.
 .PHONY: 3ds-test
 3ds-test:
@@ -165,19 +175,25 @@ sim: $(BUILD)/sim/pd_sim
 # Each script in test/sim_*.txt, after sim_boot.txt, on the player's ROMs and saves (the saves are copied first).
 ROM_DIR ?= $(HOME)/Downloads/Game ROMs & Emulation/gba
 SAVE_DIR ?= $(HOME)/Documents/RetroArch/saves/mGBA
-FR_NAME := Pokemon - FireRed Version (USA, Europe) (Rev 1)
-EM_NAME := Pokemon - Emerald Version (USA, Europe)
+# The saves' extension there: RetroArch's .srm and this port's .sav hold the same bytes.
+SAVE_EXT ?= srm
+GB_SAVE_EXT ?= sav
+FR_NAME ?= Pokemon - FireRed Version (USA, Europe) (Rev 1)
+EM_NAME ?= Pokemon - Emerald Version (USA, Europe)
+# A game with no ROM or save there is skipped, and said so.
 sim-test: sim
 	@mkdir -p $(BUILD)/sim/out
-	@for g in "$(FR_NAME)" "$(EM_NAME)"; do for t in test/sim_[!bg]*.txt test/sim_battle.txt; do \
+	@for g in "$(FR_NAME)" "$(EM_NAME)"; do \
+		if [ ! -f "$(ROM_DIR)/$$g.gba" ] || [ ! -f "$(SAVE_DIR)/$$g.$(SAVE_EXT)" ]; then echo "sim-test: no ROM or save for $$g, skipped"; continue; fi; \
+		for t in test/sim_[!bg]*.txt test/sim_battle.txt; do \
 		[ "$$t" = test/sim_boot.txt ] && continue; \
 		o="$(BUILD)/sim/out/$$(echo "$$g" | tr -cd 'A-Za-z')-$$(basename $$t .txt)"; mkdir -p "$$o"; \
-		cat test/sim_boot.txt "$$t" | $(BUILD)/sim/pd_sim "$(ROM_DIR)/$$g.gba" "$(SAVE_DIR)/$$g.srm" "$$o" | tail -3 | sed "s|^|$$t: |" || exit 1; \
+		cat test/sim_boot.txt "$$t" | $(BUILD)/sim/pd_sim "$(ROM_DIR)/$$g.gba" "$(SAVE_DIR)/$$g.$(SAVE_EXT)" "$$o" | tail -3 | sed "s|^|$$t: |" || exit 1; \
 	done; done
 
 # The Game Boy games' script on English Yellow (its ROM in GB_ROM_DIR, its save copied first).
 GB_ROM_DIR ?= $(HOME)/Downloads/Game ROMs & Emulation/gbc
-YELLOW_NAME := Pokemon - Yellow Version - Special Pikachu Edition (USA, Europe) (CGB+SGB Enhanced)
+YELLOW_NAME ?= Pokemon - Yellow Version - Special Pikachu Edition (USA, Europe) (CGB+SGB Enhanced)
 # Every Game Boy cart's dex pages, pictures and wild lists against the app's own reading: EXPORT is a gameExport's folder.
 .PHONY: gb-check
 gb-check:
@@ -188,7 +204,7 @@ gb-check:
 .PHONY: sim-test-gb
 sim-test-gb: sim
 	@mkdir -p $(BUILD)/sim/out/yellow
-	@$(BUILD)/sim/pd_sim "$(GB_ROM_DIR)/$(YELLOW_NAME).gb" "$(SAVE_DIR)/$(YELLOW_NAME).sav" $(BUILD)/sim/out/yellow test/sim_gb_yellow.txt | tail -3
+	@$(BUILD)/sim/pd_sim "$(GB_ROM_DIR)/$(YELLOW_NAME).gb" "$(SAVE_DIR)/$(YELLOW_NAME).$(GB_SAVE_EXT)" $(BUILD)/sim/out/yellow test/sim_gb_yellow.txt | tail -3
 
 # Test ROMs that load a RAM fixture (test/fixture_rom.c): the 3DS app run on
 # them, in Azahar or on a console, shows the fixtures' party with no Pokémon ROM.

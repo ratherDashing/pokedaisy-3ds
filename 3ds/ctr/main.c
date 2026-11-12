@@ -68,6 +68,7 @@ static struct pd_settings settings;
 extern volatile int host_stage;
 extern volatile unsigned host_loops;
 void host_watch_start(void);
+// Where the game's loop is: 1 running the session's tick, 2 after it, 3 drawing, 4 drawn; 0 no game.
 #define STAGE(n) (host_stage = (n), host_loops++)
 #else
 #define STAGE(n) ((void) 0)
@@ -700,6 +701,7 @@ static bool run_game(const char* file) {
     if (hasSound) ndspChnWaveBufClear(0);
     // Writes the save if the game changed it, and armGBA's warm list.
     core->deinit(core);
+    STAGE(0);
     host_log("game: closed");
     return appRunning;
 }
