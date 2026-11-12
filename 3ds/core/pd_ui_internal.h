@@ -127,6 +127,7 @@ enum setting_row {
     SETTING_THEME,
     SETTING_WILD,
     SETTING_AUTO_RUN,
+    SETTING_GB_SCREEN, // hosts with hasGbScreen: cycles in place
     SETTING_TURBO_XY,  // hosts with hasTurboXY: flips in place
     SETTING_RUN_INDOORS,
     SETTING_HINTS,

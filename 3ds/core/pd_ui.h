@@ -96,6 +96,7 @@ struct pd_settings {
     int gameVolume;  // GAME VOLUME: 20 ... 100
     bool gameMuted;  // MUTE GAME
     bool autoRun;    // AUTO-RUN: B held for the player while walking
+    int gbScreen;    // GB SCREEN (hosts with hasGbScreen): 0 GRAY, 1 GREEN (the first Game Boy), 2 POCKET, 3 LIGHT
     bool turboXY;    // X / Y BUTTONS: TURBO A / B (hosts with hasTurboXY); off = COMPANION / QUICK MENU
     bool darkMode;   // DARK MODE
     bool ffNormal;   // FF MODE: NORMAL; off = SMART, 1x while the game waits for the player
@@ -178,6 +179,7 @@ struct pd_host_info {
     bool hasButtonRows;  // Optional: QUICK MENU / COMPANION / HUD CURSOR button rows (the host reads settings.*Btn)
     bool hasFfChip;      // Optional: a fast-forward chip on the tab bar (the Linux host's; the 3DS has its own hotkeys)
     bool frontendOwnsPlayback; // Optional: the frontend runs fast-forward, save states and leaving the game: no such rows
+    bool hasGbScreen;    // Optional: the original Game Boy's screen colours can be picked (settings.gbScreen)
     bool hasTurboXY;     // Optional: X / Y can be turbo A / B (the host reads settings.turboXY)
     bool hasPerf;        // Optional: the host can show FPS / CPU (its SETTINGS row)
     bool hasState;      // a save state exists for LOAD STATE

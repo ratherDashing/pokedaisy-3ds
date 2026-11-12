@@ -34,6 +34,10 @@ struct pd_emu_host {
 // then the clock where the cartridge has one; made on the game's first save). NULL with a message in error if it can't.
 struct mCore* pd_emu_load(const char* romPath, const char* savePath, const struct pd_emu_host* host, char* error, size_t errorLen);
 
+// GB SCREEN: the colours of a game running as an original Game Boy - 0 grays, 1 the first model's green, 2 the Pocket's,
+// 3 the Light's backlight. Takes effect on the next frame; nothing for a Color or Advance game.
+void pd_emu_gb_screen(int screen);
+
 // Whether the recompiler is running (false: armGBA's interpreter - no executable memory, or a build without it).
 bool pd_emu_recompiling(struct mCore* core);
 // Whether the renderer and mixer run on threads of their own.

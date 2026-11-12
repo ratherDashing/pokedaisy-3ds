@@ -263,6 +263,8 @@ static void command(char* line) {
         pk_wide_cache(atoi(args));
     } else if (!strcmp(cmd, "cache-hits")) {
         printf("cache hits %d\n", pk_wide_cache_hits());
+    } else if (!strcmp(cmd, "gbscreen")) {
+        settings.gbScreen = atoi(args) & 3;
     } else if (!strcmp(cmd, "aspect")) {
         settings.aspect = atoi(args);
     } else if (!strcmp(cmd, "dark")) {

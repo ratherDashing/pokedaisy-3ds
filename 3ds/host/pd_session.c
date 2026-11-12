@@ -342,6 +342,7 @@ void pd_session_start(struct pd_session* s, struct mCore* core, const uint32_t* 
     s->host.expandGame = false;
     s->host.hasHud = true;
     s->host.hasPerf = true;
+    s->host.hasGbScreen = true;
 #ifdef __3DS__
     s->host.hasTurboXY = true;
 #endif
@@ -1075,6 +1076,7 @@ static void overlay_update(struct pd_session* s) {
 }
 
 void pd_session_tick(struct pd_session* s, const struct pd_input* in, unsigned ms) {
+    pd_emu_gb_screen(s->settings->gbScreen);
     quick_items(s);
     if (in->quickMenu) {
         s->quickOpen = !s->quickOpen;

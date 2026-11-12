@@ -161,6 +161,7 @@ speed. `stat` on the dev link reports `gaps`, `drops` and the `rate`; the test b
 | ZL + X (New 3DS) | on the field: the buttons go to the companion, a silver strip on the game pointing down at it (L / R step its tabs, the D-pad and A its cursor; X, START, or B with nothing left to go back from bring them back). Elsewhere companion back |
 | ZL alone (New 3DS) | previous companion tab, when let go |
 | X / Y BUTTONS: MENUS | Y is the QUICK MENU and X the companion button without ZL, and there is no turbo |
+| SETTINGS > GB SCREEN | Red and Blue, which run as an original Game Boy: GRAY, GREEN (the first Game Boy's screen), POCKET or LIGHT. The Color games keep their own colours |
 | ZR (New 3DS) | fast-forward while held |
 | START on the game list | quit to the Homebrew Launcher |
 

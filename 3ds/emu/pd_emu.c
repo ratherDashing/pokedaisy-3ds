@@ -208,6 +208,15 @@ uint32_t doCrc32(const void* buf, size_t size) {
 // The options that differ from armGBA's defaults. Threaded Video and Audio are armGBA-3DS's own settings on a New 3DS.
 // Frame Skip is Auto only so that fast-forward's unseen frames can be left undrawn (soundStatus below): a frame that
 // is shown is always drawn.
+static int gbScreen;
+static bool optionsChanged;
+
+void pd_emu_gb_screen(int screen) {
+    if (screen < 0 || screen > 3 || screen == gbScreen) return;
+    gbScreen = screen;
+    optionsChanged = true;
+}
+
 static const char* option_value(const char* key) {
     static const struct { const char* key; const char* value; } FIXED[] = {
         { "armgba_skip_bios", "enabled" },
@@ -219,6 +228,10 @@ static const char* option_value(const char* key) {
         // a third of its speed for the four seconds of a save.
         { "armgba_fast_flash_saves", "enabled" },
     };
+    if (!strcmp(key, "armgba_gb_screen")) {
+        static const char* const SCREENS[4] = { "grayscale", "measured", "pocket measured", "light" };
+        return SCREENS[gbScreen];
+    }
     if (!strcmp(key, "armgba_threaded_video") || !strcmp(key, "armgba_threaded_audio")) return E.host.threaded ? "enabled" : "disabled";
     for (size_t i = 0; i < sizeof(FIXED) / sizeof(*FIXED); i++)
         if (!strcmp(key, FIXED[i].key)) return FIXED[i].value;
@@ -263,7 +276,8 @@ static bool environment(unsigned cmd, void* data) {
         return v->value != NULL;
     }
     case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE:
-        *(bool*) data = false;
+        *(bool*) data = optionsChanged;
+        optionsChanged = false;
         return true;
     case RETRO_ENVIRONMENT_SET_AUDIO_BUFFER_STATUS_CALLBACK:
         E.audioStatus = data ? ((const struct retro_audio_buffer_status_callback*) data)->callback : NULL;
