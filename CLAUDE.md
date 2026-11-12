@@ -159,7 +159,15 @@ species2/level2/item2 too, and zero padding is harmless since 0x00 is `nop`).
 
 A homebrew 3DS build, early preview (see `3ds/README.md`): a portable C core (`3ds/core/`) re-implements
 the companion's reads (addresses generated from `gamedata/`: `pd_configs_gen.h`; decoding from `Gen3Mon.kt` - keep in sync) and
-draws it at 320x240 in the OPTION look; `3ds/ctr/` runs it beside libmgba (the same submodule). Its
+draws it at 320x240 in the OPTION look; `3ds/ctr/` runs it beside **armGBA** (`third_party/armgba`, its ARM
+recompiler; Gambatte for the Game Boy games; New 3DS only; branch `3ds-armgba`, 2026-11) - not libmgba any more.
+`3ds/emu/` is the seam: `pd_emu.c` drives armGBA through its libretro layer, and `emu/include/mgba*` are the port's own
+headers in mGBA's names (a `struct mCore`, `struct GBA` / `struct GB` as views into the machine), so the C shared with
+the mGBA hosts (`linux/fly.c`, `field_items.c`, `gb_field.c`, `pk_wide*.c`) builds unchanged: **a new member or mGBA
+call in those files must be added to the seam too, or the 3DS build breaks**. EXPAND is off there (it needs mGBA's
+renderer), saves keep mGBA's layout, an mGBA state is refused, and a binary holding Gambatte (GPL-2.0 only) can't be
+distributed (NOTICE). Verify with `make -C 3ds sim-test` (armGBA's x86-64 recompiler) and the scripted
+`make -C 3ds 3ds-test` build in Azahar (`3ds/ctr/autotest.h`); it has not run on a console with this core. Its
 tables, font, map layouts, guides (`Guide*.kt` + `GuideAreas*Gen.kt`, by a Kotlin-subset parser in
 `tools/gen_guide.py`) are generated from the app's (`make -C 3ds tables`). Look at UI changes with `make -C
 3ds preview` (PNGs from the RAM fixtures); `make -C 3ds azahar-test` boots the real `.3dsx` in the
