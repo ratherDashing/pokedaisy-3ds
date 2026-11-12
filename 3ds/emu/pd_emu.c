@@ -215,6 +215,9 @@ static const char* option_value(const char* key) {
         { "armgba_frame_skip", "auto" },
         { "armgba_restart_buttons", "off" },
         { "armgba_clock_source", "real" },
+        // armGBA's own: the Pokemon games' save routine starts and stops a timer round every byte, which cost a New 3DS
+        // a third of its speed for the four seconds of a save.
+        { "armgba_fast_flash_saves", "enabled" },
     };
     if (!strcmp(key, "armgba_threaded_video") || !strcmp(key, "armgba_threaded_audio")) return E.host.threaded ? "enabled" : "disabled";
     for (size_t i = 0; i < sizeof(FIXED) / sizeof(*FIXED); i++)
@@ -477,47 +480,6 @@ static bool write_file(const char* path, const uint8_t* a, size_t aLen, const ui
     remove(path); // the SD card's rename won't replace a file
 #endif
     return rename(temp, path) == 0;
-}
-
-// The cartridge library the Game Boy Advance Pokemon games write their save with (agb_flash) starts a timer before
-// each byte and stops it after: a timeout for a chip that never answers, which this one always does. That is nine
-// writes to the timer and interrupt registers a byte, 57 thousand bytes a save, and every one an event the recompiler
-// has to stop for: a save ran at 41 frames a second for four seconds on a New 3DS. Both routines return at once here;
-// the save is the same bytes, and Emerald's takes 2.4 times less of the processor. Found by their code, which is the
-// same in Ruby, Sapphire, FireRed, LeafGreen and Emerald, and left alone unless each is there exactly once.
-static const uint8_t FLASH_TIMER_START[] = {
-    0x70, 0xB5, 0x56, 0x46, 0x4D, 0x46, 0x44, 0x46, 0x70, 0xB4, 0x00, 0x06, 0x00, 0x0E, 0x1D, 0x49, 0x42, 0x00, 0x12, 0x18,
-    0x52, 0x00, 0x08, 0x68, 0x12, 0x18, 0x1B, 0x49, 0x1B, 0x48, 0x81, 0x46, 0x00, 0x88, 0x08, 0x80, 0x00, 0x23, 0x49, 0x46,
-    0x0B, 0x80, 0x19, 0x48, 0x80, 0x46, 0x04, 0x68, 0x63, 0x80, 0x18, 0x4E, 0x18, 0x49, 0x8A, 0x46, 0x09, 0x78, 0x08, 0x25,
-    0x28, 0x1C, 0x88, 0x40, 0x01, 0x1C, 0x30, 0x88, 0x08, 0x43, 0x30, 0x80, 0x14, 0x48, 0x03, 0x70, 0x14, 0x49, 0x10, 0x88,
-    0x08, 0x80, 0x02, 0x32, 0x10, 0x88, 0x20, 0x80, 0xA0, 0x1C, 0x41, 0x46, 0x08, 0x60, 0x50, 0x88, 0x60, 0x80, 0x0C, 0x60,
-    0x0F, 0x49, 0x52, 0x46, 0x10, 0x78, 0x85, 0x40, 0x0D, 0x80, 0x01, 0x20, 0x4B, 0x46, 0x18, 0x80, 0x38, 0xBC, 0x98, 0x46,
-    0xA1, 0x46, 0xAA, 0x46, 0x70, 0xBC, 0x01, 0xBC, 0x00, 0x47,
-};
-static const uint8_t FLASH_TIMER_STOP[] = {
-    0x0B, 0x4B, 0x00, 0x21, 0x19, 0x80, 0x0B, 0x4A, 0x10, 0x68, 0x01, 0x80, 0x02, 0x30, 0x10, 0x60, 0x01, 0x80, 0x02, 0x38,
-    0x10, 0x60, 0x08, 0x4A, 0x08, 0x48, 0x00, 0x78, 0x08, 0x21, 0x81, 0x40, 0x10, 0x88, 0x88, 0x43, 0x10, 0x80, 0x06, 0x48,
-    0x00, 0x88, 0x18, 0x80, 0x70, 0x47,
-};
-
-static long find_once(const uint8_t* rom, size_t size, const uint8_t* code, size_t len) {
-    long at = -1;
-    for (size_t i = 0; i + len <= size; i += 2) {
-        if (rom[i] != code[0] || memcmp(rom + i, code, len)) continue;
-        if (at >= 0) return -1;
-        at = (long) i;
-    }
-    return at;
-}
-
-static void skip_flash_timer(uint8_t* rom, size_t size) {
-    long start = find_once(rom, size, FLASH_TIMER_START, sizeof(FLASH_TIMER_START));
-    long stop = find_once(rom, size, FLASH_TIMER_STOP, sizeof(FLASH_TIMER_STOP));
-    if (start < 0 || stop < 0) return;
-    static const uint8_t RETURN[2] = { 0x70, 0x47 }; // bx lr
-    memcpy(rom + start, RETURN, 2);
-    memcpy(rom + stop, RETURN, 2);
-    emu_log("save: the game's flash timeout timer is skipped (0x%08lX, 0x%08lX)", 0x08000000 + start, 0x08000000 + stop);
 }
 
 #if defined(__3DS__)
@@ -1000,7 +962,6 @@ struct mCore* pd_emu_load(const char* romPath, const char* savePath, const struc
         E.core.board = &E.gbView;
     } else {
         free(rom); // armGBA has its own copy, or took this one over
-        if (gba->rom) skip_flash_timer(gba->rom, gba->romSize);
         E.core.board = &E.gbaView;
     }
     E.loaded = true;
