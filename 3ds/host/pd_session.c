@@ -1090,7 +1090,9 @@ void pd_session_tick(struct pd_session* s, const struct pd_input* in, unsigned m
     uint32_t keys = s->quickOpen ? 0 : in->held;
     // A loop is one screen refresh, so a speed is frames a refresh: 1.5x runs one, two, one, two; 0.5x every other.
     static const int SPEED_X4[PD_GAME_SPEED_COUNT] = { 4, 6, 8, 12, 16, 2, 1 };
-    int quarter = ff && !smart_slows(s) ? s->settings->ffSpeed * 4 : SPEED_X4[s->settings->gameSpeed];
+    s->ffFast = ff && !smart_slows(s);
+    // FF SPEED: MAX is 0: ten frames a refresh, more than any console here runs.
+    int quarter = s->ffFast ? (s->settings->ffSpeed ? s->settings->ffSpeed : 10) * 4 : SPEED_X4[s->settings->gameSpeed];
     s->speedDebt += quarter;
     int count = s->speedDebt / 4;
     s->speedDebt %= 4;

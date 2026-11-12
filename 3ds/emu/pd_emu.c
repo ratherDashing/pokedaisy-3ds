@@ -10,6 +10,9 @@
 #include <string.h>
 #include <strings.h>
 #include <time.h>
+#if defined(__3DS__)
+#include <3ds.h>
+#endif
 
 #include <mgba/core/core.h> // this port's own seam, not mGBA's
 
@@ -139,6 +142,7 @@ static struct {
     bool skipVideo;
     // The save file.
     bool savePending;
+    bool saveNow; // write the save on this thread (leaving), not the writer's
     int saveQuiet;
     uint32_t gbSaveHash;
     unsigned frames;
@@ -475,7 +479,65 @@ static bool write_file(const char* path, const uint8_t* a, size_t aLen, const ui
     return rename(temp, path) == 0;
 }
 
+#if defined(__3DS__)
+// On a console the SD card takes about three seconds over a save file (measured: 2.9 s for Emerald's 128 KiB), and the
+// game stood still for them. So a copy of the save goes to a thread that writes it, and the game runs on.
+static struct {
+    Thread thread;
+    uint8_t* data;
+    size_t aLen, bLen;
+    char path[1024];
+    volatile int state; // 0 none, 1 writing, 2 written, 3 failed
+} saver;
+
+static void saver_main(void* arg) {
+    (void) arg;
+    saver.state = write_file(saver.path, saver.data, saver.aLen, saver.data + saver.aLen, saver.bLen) ? 2 : 3;
+}
+
+// The writer's result, taken on the game's thread (which owns the log); `wait` for a write still going.
+static void saver_reap(bool wait) {
+    if (!saver.thread || (!wait && saver.state == 1)) return;
+    threadJoin(saver.thread, U64_MAX);
+    threadFree(saver.thread);
+    saver.thread = NULL;
+    free(saver.data);
+    saver.data = NULL;
+    emu_log(saver.state == 2 ? "save: wrote %s" : "save: COULDN'T WRITE %s", saver.path);
+    if (saver.state == 3) E.savePending = true; // tried again once the game has been quiet as long again
+    saver.state = 0;
+}
+
+// false: no thread or no memory, and the caller writes it itself.
+static bool saver_start(const char* path, const uint8_t* a, size_t aLen, const uint8_t* b, size_t bLen) {
+    saver_reap(true);
+    if (strlen(path) >= sizeof(saver.path)) return false;
+    saver.data = malloc(aLen + bLen + 1);
+    if (!saver.data) return false;
+    memcpy(saver.data, a, aLen);
+    if (bLen) memcpy(saver.data + aLen, b, bLen);
+    saver.aLen = aLen;
+    saver.bLen = bLen;
+    strcpy(saver.path, path);
+    saver.state = 1;
+    s32 priority = 0x30;
+    svcGetThreadPriority(&priority, CUR_THREAD_HANDLE);
+    // Core 2 is the renderer's; the writer waits on the card nearly all its time, and below the game's priority.
+    saver.thread = threadCreate(saver_main, NULL, 32 * 1024, priority + 2, 2, false);
+    if (!saver.thread) {
+        free(saver.data);
+        saver.data = NULL;
+        saver.state = 0;
+        return false;
+    }
+    return true;
+}
+#endif
+
 static void read_save(void) {
+#if defined(__3DS__)
+    saver_reap(true);
+#endif
     size_t size = 0;
     uint8_t* file = read_file(E.savePath, &size);
     if (!file) {
@@ -551,6 +613,14 @@ static bool write_save(void) {
             trailer[7] = gba->gpio.rtc.control;
             put64(trailer + 8, (uint64_t) time(NULL));
         }
+#if defined(__3DS__)
+        if (!E.saveNow && saver_start(E.savePath, gba->savedata.storage, size, trailer, clock ? sizeof(trailer) : 0)) {
+            E.savePending = false;
+            E.saveQuiet = 0;
+            return true;
+        }
+        saver_reap(true);
+#endif
         ok = write_file(E.savePath, gba->savedata.storage, size, trailer, clock ? sizeof(trailer) : 0);
     }
     emu_log(ok ? "save: wrote %s" : "save: COULDN'T WRITE %s", E.savePath);
@@ -578,6 +648,9 @@ static void track_save(void) {
         E.savePending = true;
         E.saveQuiet = 0;
     }
+#if defined(__3DS__)
+    saver_reap(false);
+#endif
     if (E.savePending && ++E.saveQuiet >= SAVE_QUIET_FRAMES) write_save();
 }
 
@@ -589,7 +662,12 @@ void pd_emu_flush_save(struct mCore* core) {
         E.savePending = true;
     }
     if (E.gb && E.gbCartRam && hash_of(E.gbCartRam, E.gbCartRamSize) != E.gbSaveHash) E.savePending = true;
+    E.saveNow = true; // the caller is leaving, or wants the file as it is now: written here, not behind it
     if (E.savePending) write_save();
+#if defined(__3DS__)
+    saver_reap(true);
+#endif
+    E.saveNow = false;
 }
 
 // --- struct mCore ---

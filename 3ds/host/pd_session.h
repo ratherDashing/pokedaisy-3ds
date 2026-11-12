@@ -88,6 +88,7 @@ struct pd_session {
     bool ffToggled, ff;
     bool leave;
     bool wasBusy;
+    bool ffFast;   // fast-forward is on and SMART isn't holding it at 1x: the host mutes then, and only then
     int speedDebt; // quarters of a frame owed at GAME SPEED
 
     // The field read (pk_field_state) and EXPAND.

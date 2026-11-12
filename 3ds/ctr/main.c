@@ -84,8 +84,9 @@ void host_watch_start(void);
 #define AUDIO_SAMPLES 384
 #define DSP_BUFFERS 16
 // How many chunks the queue keeps ahead (a chunk is 11.7 ms, a frame makes 1.4), and how far either way it may wander
-// before the rate moves. It rests at TARGET - SLACK: 58 ms, three late frames' worth. It was 35 ms, one late frame's.
-#define AUDIO_TARGET 6
+// before the rate moves. It rests at TARGET - SLACK: 82 ms: a console redraws
+// the bottom screen in 31 ms, and the frames that cost are run afterwards (the main loop's owed). It was 35 ms, one late frame's.
+#define AUDIO_TARGET 8
 #define AUDIO_SLACK 1
 // A queue that ran dry is filled to this before it plays again: one short silence. Played chunk by chunk as they came,
 // each ended before the next arrived, and one late frame crackled for the seconds the rate took to rebuild the queue.
@@ -561,9 +562,18 @@ static bool run_game(const char* file) {
     const double framePeriod = (double) SYSCLOCK_ARM11 * 4481136.0 / 268111856.0;
     const double tickMs = (double) SYSCLOCK_ARM11 / 1000.0;
     double typicalWork = framePeriod / 2;
+    u64 lastPassTop = 0;
+    int owed = 0;
 
     while ((appRunning = aptMainLoop())) {
         u64 passTop = svcGetSystemTick();
+        // A pass that ran over a refresh (the bottom screen redrawn, a block compiled) ran a frame for two or three
+        // refreshes: the game fell behind the sound it should have made, and the queue paid. Those frames are owed.
+        if (lastPassTop) {
+            int lost = (int) (((double) (passTop - lastPassTop) + framePeriod / 2) / framePeriod) - 1;
+            if (lost > 0) owed = owed + lost > 3 ? 3 : owed + lost;
+        }
+        lastPassTop = passTop;
         u64 compiledAtTop = pd_emu_compile_ticks();
         double compileBudget = framePeriod - typicalWork - 1.5 * tickMs; // the 1.5 ms: handing the frame to the GPU
         if (compileBudget < 0.25 * tickMs) compileBudget = 0.25 * tickMs;
@@ -659,7 +669,14 @@ static bool run_game(const char* file) {
         struct pd_input in = { .held = gba_keys(held & ~withheld), .down = gba_keys(down & ~withheld),
                                .quickMenu = (down & KEY_Y) && !uiPtr->keyFocus,
                                .ffHeld = held & KEY_ZR, .stickAngle = stick_angle() };
-        pd_emu_compile_budget((held & KEY_ZR) || session.ff ? ~0ull : (uint64_t) compileBudget);
+        pd_emu_compile_budget(session.ffFast ? ~0ull : (uint64_t) compileBudget);
+        // One owed frame a pass, and only while a second frame fits in the refresh: a game under speed owes nothing.
+        if (owed && !session.ffFast && settings.gameSpeed == 0 && typicalWork < 0.45 * framePeriod) {
+            session.speedDebt += 4;
+            owed--;
+        } else if (session.ffFast || typicalWork >= 0.45 * framePeriod) {
+            owed = 0;
+        }
         DEV_MARK(coreStart);
         u64 busyStart = svcGetSystemTick();
         u64 tickNow = osGetTime();
@@ -670,7 +687,13 @@ static bool run_game(const char* file) {
         lastTick = tickNow;
         unsigned frames = session.frame - before;
         if (frames) pd_session_set_video(&session, gpu_frame_done());
-        audioMuted = session.ff;
+        audioMuted = session.ffFast; // SMART's 1x (a menu, a battle's choices) keeps its sound
+        {
+            static int ffWas;
+            int ffNow = session.ff ? (session.ffFast ? 2 : 1) : 0;
+            if (ffNow != ffWas) host_log("fast-forward: %s", ffNow == 2 ? "on" : ffNow ? "on, held at 1x by FF MODE: SMART" : "off");
+            ffWas = ffNow;
+        }
         busyTicks += svcGetSystemTick() - busyStart;
 #ifdef PD_LOG_URL
         u64 diagCoreEnd = svcGetSystemTick();
