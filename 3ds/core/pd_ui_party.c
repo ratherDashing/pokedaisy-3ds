@@ -665,10 +665,12 @@ static void widen_row(const uint32_t* src, int srcW, uint32_t* dst, int w, const
     }
 }
 
-static void screen_up(struct pd_canvas* c, const uint32_t* px, int srcW, int srcH, const struct card_scale* k) {
+// Returns the rows it wrote.
+static int screen_up(struct pd_canvas* c, const uint32_t* px, int srcW, int srcH, const struct card_scale* k) {
     static uint32_t r[2][CARDS_CANVAS_W];
     int have[2] = { -1, -1 };
-    for (int y = 0; y < c->h; y++) {
+    int y = 0;
+    for (; y < c->h; y++) {
         int near, s = source_of(y, k, &near);
         if (s >= srcH) break;
         for (int i = 0; i < 2; i++) {
@@ -683,6 +685,13 @@ static void screen_up(struct pd_canvas* c, const uint32_t* px, int srcW, int src
         uint32_t* d = c->px + y * c->w;
         for (int x = 0; x < c->w; x++) d[x] = near == k->den ? a[x] : mix(a[x], b[x], near, k->den - near);
     }
+    return y;
+}
+
+static uint64_t memo_hash(uint64_t h, const void* data, size_t n) {
+    const unsigned char* p = data;
+    while (n--) h = (h ^ *p++) * 0x100000001B3ull;
+    return h;
 }
 
 // A card's geometry: as art_geometry grows a slot, in width only.
@@ -698,6 +707,32 @@ static bool draw_cards(struct pd_canvas* c, const struct pd_game* g, const struc
     struct pd_canvas screen;
     bool up = k->num != k->den;
     int w = (c->w * k->den + k->num - 1) / k->num + 1, h = (c->h * k->den + k->num - 1) / k->num + 1;
+    // The scaled cards are the same picture until the party or the cursor changes, and painting them is most of a
+    // redraw (31 ms of one on a New 3DS, a frame and a half of the game): the last picture is kept and copied.
+    static struct {
+        uint64_t key;
+        int rows, textCount;
+        struct card_text texts[PD_PARTY_SIZE * 6];
+        uint32_t out[PD_UI_WIDTH * PD_UI_HEIGHT];
+    } memo;
+    uint64_t key = 0;
+    bool keep = up && cards && c->w <= PD_UI_WIDTH && c->h <= PD_UI_HEIGHT;
+    if (keep) {
+        int dims[] = { c->w, c->h, selected, s->partyCount, (int) pd_rom_id(g) };
+        const void* owners[] = { g, art, art->style };
+        key = memo_hash(0xCBF29CE484222325ull, dims, sizeof(dims));
+        key = memo_hash(key, owners, sizeof(owners));
+        key = memo_hash(key, at, sizeof(*at) * PD_PARTY_SIZE);
+        key = memo_hash(key, k, sizeof(*k));
+        for (int i = 0; i < s->partyCount && i < PD_PARTY_SIZE; i++) key = memo_hash(key, &s->party[i], sizeof(s->party[i]));
+        if (!key) key = 1;
+        if (memo.key == key) {
+            memcpy(c->px, memo.out, (size_t) c->w * memo.rows * 4);
+            memcpy(cardTexts, memo.texts, sizeof(cardTexts));
+            cardTextCount = memo.textCount;
+            goto texts;
+        }
+    }
     pd_canvas_init(&screen, w, h, px);
     if (up && !pd_party_screen(&screen, g)) return false;
     struct art_geometry a = card_geometry(art->style, k->extraW);
@@ -710,7 +745,17 @@ static bool draw_cards(struct pd_canvas* c, const struct pd_game* g, const struc
         art_slot_at(up ? &screen : c, g, art, &a, at[i].x, at[i].y, m, m && i == selected);
     }
     cardTextsOn = false;
-    if (up) screen_up(c, px, w, h, k);
+    if (up) {
+        int rows = screen_up(c, px, w, h, k);
+        if (keep) {
+            memcpy(memo.out, c->px, (size_t) c->w * rows * 4);
+            memcpy(memo.texts, cardTexts, sizeof(cardTexts));
+            memo.textCount = cardTextCount;
+            memo.rows = rows;
+            memo.key = key;
+        }
+    }
+texts:
     for (int i = 0; i < cardTextCount; i++) {
         const struct card_text* t = &cardTexts[i];
         int x = t->x * k->num / k->den, y = (t->y + TEXT_TOP) * k->num / k->den + CARD_TEXT_DY;
