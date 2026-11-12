@@ -82,10 +82,14 @@ void host_watch_start(void);
 #define SCREEN_HZ (268111856.0 / 4481136.0)
 #define DSP_RATE ((float) (PD_EMU_SAMPLE_RATE * SCREEN_HZ / PD_EMU_FPS))
 #define AUDIO_SAMPLES 384
-#define DSP_BUFFERS 8
-// How many chunks the queue keeps ahead, and how far either way it may wander before the rate moves.
-#define AUDIO_TARGET 5
-#define AUDIO_SLACK 2
+#define DSP_BUFFERS 16
+// How many chunks the queue keeps ahead (a chunk is 11.7 ms, a frame makes 1.4), and how far either way it may wander
+// before the rate moves. It rests at TARGET - SLACK: 58 ms, three late frames' worth. It was 35 ms, one late frame's.
+#define AUDIO_TARGET 6
+#define AUDIO_SLACK 1
+// A queue that ran dry is filled to this before it plays again: one short silence. Played chunk by chunk as they came,
+// each ended before the next arrived, and one late frame crackled for the seconds the rate took to rebuild the queue.
+#define AUDIO_REFILL 4
 #define AUDIO_MADE_EASE 0.02f  // about 0.6 s of chunks
 #define AUDIO_RATE_EASE 0.1f
 #define AUDIO_QUEUE_PULL 0.004f
@@ -99,6 +103,7 @@ static int16_t* audioBuf;
 static int bufferId;
 static float audioRate = 1.0f, audioRateSet = 1.0f, audioMade = 1.0f;
 static u64 audioLast;
+static bool audioRefill = true; // the channel is paused until the queue holds AUDIO_REFILL chunks
 static unsigned audioGaps, audioDrops; // the queue ran dry / had no room, for the dev build's stat
 
 #ifdef PD_LOG_URL
@@ -152,7 +157,11 @@ static ndspWaveBuf* audio_next(void) {
         audio_follow(queued);
         return NULL;
     }
-    if (!queued) audioGaps++;
+    if (!queued && !audioRefill) {
+        audioGaps++;
+        audioRefill = true;
+        ndspChnSetPaused(0, true);
+    }
 #ifdef PD_LOG_URL
     if ((unsigned) queued < diag.queueMin) diag.queueMin = (unsigned) queued;
 #endif
@@ -169,6 +178,15 @@ static ndspWaveBuf* audio_next(void) {
 static void audio_send(ndspWaveBuf* b) {
     DSP_FlushDataCache(b->data_pcm16, AUDIO_SAMPLES * 2 * sizeof(int16_t));
     ndspChnWaveBufAdd(0, b);
+    if (audioRefill) {
+        int queued = 0;
+        for (int i = 0; i < DSP_BUFFERS; i++)
+            if (dspBuffer[i].status == NDSP_WBUF_QUEUED || dspBuffer[i].status == NDSP_WBUF_PLAYING) queued++;
+        if (queued >= AUDIO_REFILL) {
+            audioRefill = false;
+            ndspChnSetPaused(0, false);
+        }
+    }
 }
 
 // The core's sound as each frame makes it (pd_emu_host.audio), cut into the DSP's chunks; a chunk with nowhere to go
@@ -216,6 +234,7 @@ static void audio_init(void) {
     ndspChnSetInterp(0, NDSP_INTERP_LINEAR);
     ndspChnSetRate(0, DSP_RATE);
     ndspChnWaveBufClear(0);
+    ndspChnSetPaused(0, true); // audioRefill starts true
     audioBuf = linearMemAlign(AUDIO_SAMPLES * DSP_BUFFERS * 2 * sizeof(int16_t), 0x80);
     if (!audioBuf) {
         ndspExit();
