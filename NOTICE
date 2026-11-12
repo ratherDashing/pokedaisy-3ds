@@ -45,8 +45,10 @@ The app shows every license below in full under Settings > LICENSES.
   its source files say "version 2 as published by the Free Software Foundation", without "or any later
   version"), holding snes_spc (Shay Green, GNU LGPL 2.1 or later).
   GPL-2.0-only code and this program's GPL-3.0 code cannot be conveyed together as one work: neither licence
-  permits the other's terms. A 3DS or simulator binary that links Gambatte - what 3ds/ builds - may therefore be
-  built and run for your own use but MUST NOT BE DISTRIBUTED. A distributable build needs one of: PokeDaisy's
+  permits the other's terms. A 3DS or simulator binary that links Gambatte - what 3ds/ builds - is therefore
+  outside what either licence grants once it is passed on. ratherDashing/pokedaisy-3ds publishes its alpha .cia
+  and .3dsx with that unresolved, so that the port can be tried; they will be withdrawn if a copyright holder
+  asks. A build clear of the question needs one of: PokeDaisy's
   copyright holder granting an exception for linking Gambatte, every Gambatte copyright holder allowing GPL 3,
   or the Game Boy side built on a core whose licence allows it (mGBA's, MPL 2.0, as the other hosts use).
   The port's own seam (3ds/emu/) is PokeDaisy's, GPL 3.0; its headers under 3ds/emu/include/mgba* are written

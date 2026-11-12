@@ -173,7 +173,10 @@ executable). The original 3DS, 3DS XL and 2DS aren't supported: the app tells yo
 3. For sound, the DSP firmware must be dumped once (`sdmc:/3ds/dspfirm.cdc`, the DSP1 homebrew does it) - without it
    the game runs silent.
 
-A build that holds Gambatte is for your own console: see "Licences" below before passing one on.
+Each release of [ratherDashing/pokedaisy-3ds](https://github.com/ratherDashing/pokedaisy-3ds/releases) has a QR code of
+its `.cia`: FBI > Remote Install > Scan QR Code installs it from there. GBA games run on armGBA (the submodule is its
+`3ds-v0.0.2-alpha` release) and Game Boy and Game Boy Color games on the Gambatte that armGBA carries; see "Licences"
+below for where that leaves a build that is passed on.
 
 ## Running it without a 3DS (Azahar)
 
@@ -335,8 +338,9 @@ not used; nor is render-to-texture.
 PokeDaisy is GPL-3.0 (`NOTICE`). armGBA's core, its libretro layer and its 3DS host code are MPL-2.0, which may be
 combined with GPL-3.0 code and conveyed under it. **Gambatte is GPL-2.0 only** (every source file says "version 2 as
 published", none "or later"), and GPL-2.0-only code can't be conveyed in one program with GPL-3.0 code. So a build
-that holds Gambatte - the default, with Game Boy and Game Boy Color games - is for your own use: build it, run it, but
-don't distribute the binary. `NOTICE` has the details and what would make a distributable build.
+that holds Gambatte - the default, with Game Boy and Game Boy Color games - is outside what either licence grants once
+it is passed on. The alpha releases of ratherDashing/pokedaisy-3ds are published with that unresolved, so that the port
+can be tried, and will be withdrawn if a copyright holder asks. `NOTICE` has the details and what would settle it.
 
 ## Next steps
 

@@ -136,7 +136,7 @@ $(BUILD)/pokedaisy.rsf: $(ARMGBA)/platform/3ds/armgba.rsf
 cia-parts: $(BUILD)/$(TARGET).elf $(BUILD)/banner.bnr $(BUILD)/icon.icn $(BUILD)/pokedaisy.rsf
 $(TARGET).cia: cia-parts
 	@$(MAKEROM) -f cia -o $@ -elf $(BUILD)/$(TARGET).elf -rsf $(BUILD)/pokedaisy.rsf -target t -exefslogo -icon $(BUILD)/icon.icn \
-	         -banner $(BUILD)/banner.bnr -major 0 -minor 1 -micro 0
+	         -banner $(BUILD)/banner.bnr -major 0 -minor 0 -micro 1
 	@echo built $@
 cia: $(TARGET).cia
 
