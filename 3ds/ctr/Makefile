@@ -121,17 +121,13 @@ $(TARGET).3dsx: $(BUILD)/$(TARGET).elf $(BUILD)/$(TARGET).smdh
 
 # The CIA: makerom packs the ELF with the permissions the recompiler needs. Those are armGBA-3DS's own
 # (platform/3ds/armgba.rsf: the 80 MB mode, the 804 MHz clock, every core, svcControlProcessMemory), taken from the
-# submodule with PokeDaisy's title, product code and unique ID in place of armGBA's. banner.png and banner.wav are
-# drawn by ../tools/gen_banner.py (banner.png). cia-parts makes what bannertool makes; cia.sh then runs makerom (see ../Makefile).
+# submodule with PokeDaisy's title, product code and unique ID in place of armGBA's. banner.png and banner.wav (the picture and
+# the chime) are made by ../tools/gen_banner.py. cia-parts makes what bannertool makes; cia.sh then runs makerom (see ../Makefile).
 BANNERTOOL ?= bannertool
 MAKEROM ?= makerom
-# The banner's sound: a second and a half of silence (32 kHz, stereo, 16-bit), made here - the app has no chime.
-$(BUILD)/banner.wav:
+$(BUILD)/banner.bnr: banner.png banner.wav
 	@mkdir -p $(BUILD)
-	@printf 'RIFF\044\356\002\000WAVEfmt \020\000\000\000\001\000\002\000\000\175\000\000\000\364\001\000\004\000\020\000data\000\356\002\000' > $@
-	@head -c 192000 /dev/zero >> $@
-$(BUILD)/banner.bnr: banner.png $(BUILD)/banner.wav
-	@$(BANNERTOOL) makebanner -i banner.png -a $(BUILD)/banner.wav -o $@
+	@$(BANNERTOOL) makebanner -i banner.png -a banner.wav -o $@
 $(BUILD)/icon.icn: icon.png
 	@$(BANNERTOOL) makesmdh -s "$(TITLE)" -l "Pokemon companion: GBA, Game Boy, Game Boy Color" -p "PokeDaisy" -i icon.png -o $@
 $(BUILD)/pokedaisy.rsf: $(ARMGBA)/platform/3ds/armgba.rsf

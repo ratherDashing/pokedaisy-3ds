@@ -19,4 +19,4 @@
 [submodule "third_party/armgba"]
 	path = third_party/armgba
 	url = https://github.com/ratherDashing/armGBA
-	branch = 3ds
+	branch = main
