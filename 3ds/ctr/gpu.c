@@ -474,9 +474,11 @@ static void draw_thread_start(void) {
     LightEvent_Signal(&stageFree);
     s32 priority = 0x30;
     svcGetThreadPriority(&priority, CUR_THREAD_HANDLE);
-    // The New 3DS's fourth core: mGBA's renderer has the third.
-    drawThread = threadCreate(draw_main, NULL, DRAW_STACK, priority - 1, 3, false);
-    if (!drawThread) drawThread = threadCreate(draw_main, NULL, DRAW_STACK, priority - 1, 2, false);
+    // The New 3DS's fourth core, which armGBA's second render worker and its mixer have too (jitmem.c: the worker at
+    // the game thread's priority, the mixer a step above). This thread goes a step below both, so it writes the textures
+    // in the time they leave: a step above them, as it was beside mGBA, the worker never got to draw and the game
+    // thread waited for its lines for ever (seen in Azahar, 2026-11-11).
+    drawThread = threadCreate(draw_main, NULL, DRAW_STACK, priority + 1, 3, false);
     if (drawThread) aptHook(&drawHook, draw_apt_hook, NULL);
 }
 

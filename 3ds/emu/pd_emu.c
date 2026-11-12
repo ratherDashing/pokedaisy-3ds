@@ -121,6 +121,9 @@ static struct {
     enum retro_pixel_format format;
 } E;
 
+// 10 while the core runs a frame, 11 after: for a test build's watchdog (ctr/host.c), which says where a stopped loop stands.
+volatile int pd_emu_stage;
+
 static void emu_log(const char* format, ...) {
     if (!E.host.log) return;
     char line[512];
@@ -557,7 +560,9 @@ static void core_run_frame(struct mCore* core) {
     // Frame Skip's Auto leaves a frame undrawn while the sound is said to be running short: said only for the frames
     // fast-forward doesn't show.
     if (E.audioStatus) E.audioStatus(true, E.skipVideo ? 0 : 100, E.skipVideo);
+    pd_emu_stage = 10;
     retro_run();
+    pd_emu_stage = 11;
     E.frames++;
     refresh_views();
     track_save();

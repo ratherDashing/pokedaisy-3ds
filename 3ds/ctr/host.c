@@ -159,3 +159,27 @@ void* readFile(const char* path, size_t* size) {
     if (data) *size = (size_t) length;
     return data;
 }
+
+#ifdef PD_AUTOTEST
+// The test build's watchdog: once a second, where the main loop is, in case it stops.
+volatile int host_stage;
+extern volatile int pd_emu_stage;
+volatile unsigned host_loops;
+static void watch_main(void* arg) {
+    (void) arg;
+    unsigned last = ~0u;
+    int same = 0;
+    for (;;) {
+        svcSleepThread(1000000000LL);
+        if (host_loops == last) {
+            if (++same <= 5 || same % 30 == 0) host_log("watchdog: the main loop has stood at stage %d / %d for %d s (loop %u)", host_stage, pd_emu_stage, same, last);
+        } else {
+            same = 0;
+        }
+        last = host_loops;
+    }
+}
+void host_watch_start(void) {
+    threadCreate(watch_main, NULL, 16 * 1024, 0x19, 1, true);
+}
+#endif

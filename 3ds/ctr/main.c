@@ -64,6 +64,14 @@ enum {
 static uint32_t topPx[TOP_W * TOP_H];
 static uint32_t bottomPx[PD_UI_WIDTH * PD_UI_HEIGHT];
 static struct pd_settings settings;
+#ifdef PD_AUTOTEST
+extern volatile int host_stage;
+extern volatile unsigned host_loops;
+void host_watch_start(void);
+#define STAGE(n) (host_stage = (n), host_loops++)
+#else
+#define STAGE(n) ((void) 0)
+#endif
 
 // --- audio ---
 
@@ -607,13 +615,9 @@ static bool run_game(const char* file) {
         u64 busyStart = svcGetSystemTick();
         u64 tickNow = osGetTime();
         unsigned before = session.frame;
-#ifdef PD_AUTOTEST
-        if (session.frame < 400) host_log("loop: frame %u about to run", session.frame);
-#endif
+        STAGE(1);
         pd_session_tick(&session, &in, (unsigned) (tickNow - lastTick));
-#ifdef PD_AUTOTEST
-        if (session.frame <= 400) host_log("loop: frame %u ran", session.frame);
-#endif
+        STAGE(2);
         lastTick = tickNow;
         unsigned frames = session.frame - before;
         if (frames) pd_session_set_video(&session, gpu_frame_done());
@@ -656,10 +660,9 @@ static bool run_game(const char* file) {
         gpu_set_wide_hole(hole->x, hole->y, hole->w, hole->h, hole->gameX, hole->gameY);
         if (session.overlayDirty) gpu_set_overlay(pd_session_overlay(&session));
         gpu_show_overlay(session.overlayShown, session.overlayDim);
+        STAGE(3);
         gpu_draw(true, pd_session_screen(&session));
-#ifdef PD_AUTOTEST
-        if (session.frame <= 400) host_log("loop: drawn");
-#endif
+        STAGE(4);
         devlink_after_frame();
 #ifdef PD_DEV
         {
@@ -825,6 +828,7 @@ int main(void) {
 #ifdef PD_AUTOTEST
     mkdir("sdmc:" BASE_DIR "/shots", 0777);
     autotest_start("sdmc:" BASE_DIR "/autotest.txt", "sdmc:" BASE_DIR "/shots");
+    host_watch_start();
 #endif
     char file[256];
     while (pick_rom(file, sizeof(file))) {

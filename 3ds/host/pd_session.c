@@ -31,12 +31,6 @@
 // EXPAND / ZOOM OUT draw past the game's picture from mGBA's renderer (each pixel's layer, each line's registers as it
 // was drawn). armGBA's renderer has neither to give, so this build keeps the game's own picture: ASPECT is ORIGINAL
 // whatever the settings file says, and pk_wide only tells the scene (field, menu, battle) for the HUD and AUTO-RUN.
-#ifdef PD_AUTOTEST
-void logLine(const char* format, ...);
-#define TRACE(x) logLine(x)
-#else
-#define TRACE(x)
-#endif
 #define ASPECT(s) ((void) (s), PD_ASPECT_ORIGINAL)
 #define NOTICE_FRAMES 150
 #define HUD_AFTER_FRAMES 20 // the HUD comes on after this much plain field (FieldHud's rule), off at once
@@ -450,11 +444,8 @@ static void wide_tick(struct pd_session* s, bool skip) {
     if (original) {
         // A one-pixel window.
         static uint32_t px;
-        TRACE("wide: view");
         pk_wide_view(s->core, source, &px, (struct PkWideView) { 0, 0, 1, 1 }, NULL);
-        TRACE("wide: finish");
         pk_wide_finish();
-        TRACE("wide: done");
         return;
     }
     int aspect = ASPECT(s) == PD_ASPECT_ZOOM_OUT && (in_battle(s) || (s->settings->autoZoom &&
@@ -505,7 +496,6 @@ void pd_session_run_frame(struct pd_session* s, uint32_t playerKeys, bool last) 
         keys |= s->gameKeys;
         s->gameKeyFrames--;
     }
-    TRACE("frame: run");
     s->core->setKeys(s->core, keys);
     uint64_t start = s->files.clock ? s->files.clock() : 0;
     s->core->runFrame(s->core);
@@ -516,7 +506,6 @@ void pd_session_run_frame(struct pd_session* s, uint32_t playerKeys, bool last) 
     }
     if (s->fieldKnown)
         s->fieldFlags = pk_field_state(s->core, s->settings->runIndoors, s->wildSwitch && s->settings->wildOff ? 0 : 100);
-    TRACE("frame: ran");
     s->framePending = last;
     uint64_t wideStart = s->files.clock ? s->files.clock() : 0;
     wide_tick(s, !last);
