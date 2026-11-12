@@ -175,7 +175,7 @@ executable). The original 3DS, 3DS XL and 2DS aren't supported: the app tells yo
 
 Each release of [ratherDashing/pokedaisy-3ds](https://github.com/ratherDashing/pokedaisy-3ds/releases) has a QR code of
 its `.cia`: FBI > Remote Install > Scan QR Code installs it from there. GBA games run on armGBA (the submodule is its
-`3ds-v0.0.2-alpha` release) and Game Boy and Game Boy Color games on the Gambatte that armGBA carries; see "Licences"
+`3ds-v0.0.3-alpha` release) and Game Boy and Game Boy Color games on the Gambatte that armGBA carries; see "Licences"
 below for where that leaves a build that is passed on.
 
 ## Running it without a 3DS (Azahar)

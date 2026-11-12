@@ -125,10 +125,14 @@ static u64 diagLastTop;
 static void audio_follow(int queued) {
     u64 now = svcGetSystemTick();
     if (audioLast && now > audioLast) {
-        float made = (float) AUDIO_SAMPLES * (float) SYSCLOCK_ARM11 / (float) (now - audioLast) / DSP_RATE;
-        if (made < 0.3f) made = 0.3f; // a pause (the HOME menu) says nothing about the game's speed
-        if (made > 2.0f) made = 2.0f;
-        audioMade += (made - audioMade) * AUDIO_MADE_EASE;
+        // The time between chunks is what is averaged, not its inverse: chunks come in bursts (a frame makes one or
+        // two, an owed frame two more), and the mean of the rates of a burst and a wait is above the true rate. On a
+        // console that read 1% fast, the channel played 1% fast, and the queue it was meant to keep sat at one chunk.
+        static float between = 1.0f; // in chunk times at full speed
+        float took = (float) (now - audioLast) * DSP_RATE / ((float) AUDIO_SAMPLES * (float) SYSCLOCK_ARM11);
+        if (took > 3.3f) took = 3.3f; // a pause (the HOME menu) says nothing about the game's speed
+        between += (took - between) * AUDIO_MADE_EASE;
+        audioMade = 1.0f / between;
     }
     audioLast = now;
     int off = queued - AUDIO_TARGET;
@@ -136,6 +140,9 @@ static void audio_follow(int queued) {
     if (want > 0.985f && off >= -AUDIO_SLACK && off <= AUDIO_SLACK) want = 1.0f;
     if (want < AUDIO_RATE_MIN) want = AUDIO_RATE_MIN;
     if (want > AUDIO_RATE_MAX) want = AUDIO_RATE_MAX;
+    // A queue filling up says the game is back at speed before the average does: straight to full rate, or the
+    // chunks that find no room are dropped.
+    if (off > 3 && audioRate < 1.0f) audioRate = want = want > 1.0f ? want : 1.0f;
     audioRate += (want - audioRate) * AUDIO_RATE_EASE;
     if (want == 1.0f && audioRate > 0.999f) audioRate = 1.0f;
     float moved = audioRate - audioRateSet;
@@ -564,14 +571,22 @@ static bool run_game(const char* file) {
     double typicalWork = framePeriod / 2;
     u64 lastPassTop = 0;
     int owed = 0;
+    double behind = 0;
 
     while ((appRunning = aptMainLoop())) {
         u64 passTop = svcGetSystemTick();
         // A pass that ran over a refresh (the bottom screen redrawn, a block compiled) ran a frame for two or three
         // refreshes: the game fell behind the sound it should have made, and the queue paid. Those frames are owed.
         if (lastPassTop) {
-            int lost = (int) (((double) (passTop - lastPassTop) + framePeriod / 2) / framePeriod) - 1;
-            if (lost > 0) owed = owed + lost > 3 ? 3 : owed + lost;
+            // Kept as time behind the refreshes, not pass by pass: a pass half a refresh late and the next half one
+            // early lost nothing, and counted singly each late one owed a frame (65 frames a second on a console).
+            behind += (double) (passTop - lastPassTop) / framePeriod - 1.0;
+            if (behind < -0.5) behind = -0.5;
+            if (behind > 3.0) behind = 3.0;
+            if (behind >= 1.0 && owed < 3) {
+                owed++;
+                behind -= 1.0;
+            }
         }
         lastPassTop = passTop;
         u64 compiledAtTop = pd_emu_compile_ticks();

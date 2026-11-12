@@ -85,7 +85,11 @@ void pd_library_title(const char* file, char* out, int len, bool* hack, bool* su
         const struct pd_game_entry* e = &pd_game_entries[i];
         if (strcmp(e->file, base)) continue;
         snprintf(out, (size_t) len, "%s", e->title);
-        *hack = strcmp(e->gameKind, "FIRERED") && strcmp(e->gameKind, "EMERALD");
+        // A hack has a kind of its own; these are the retail games' (Red and Blue were listed as hacks).
+        static const char* const RETAIL[] = { "FIRERED", "EMERALD", "RED", "BLUE", "YELLOW", "GOLD", "SILVER", "CRYSTAL" };
+        *hack = true;
+        for (size_t k = 0; k < sizeof(RETAIL) / sizeof(*RETAIL); k++)
+            if (!strcmp(e->gameKind, RETAIL[k])) *hack = false;
         *supported = true;
         return;
     }

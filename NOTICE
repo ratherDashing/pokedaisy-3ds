@@ -33,7 +33,7 @@ The app shows every license below in full under Settings > LICENSES.
   stays under the MPL 2.0 (its header says so).
 - The 3DS port only (3ds/, built by 3ds/ctr/Makefile and 3ds/desktop/sim/Makefile; nothing here is in the Android
   app or the Linux hosts, which run mGBA): armGBA (third_party/armgba, the ratherDashing/armGBA fork of
-  MagnominusGit/armGBA, branch 3ds at commit 49869e9), Copyright (c) 2026 Magnominus and the armGBA 3DS port
+  MagnominusGit/armGBA, its 3ds-v0.0.3-alpha at commit edfd556), Copyright (c) 2026 Magnominus and the armGBA 3DS port
   contributors, with code that follows mGBA's, Copyright (c) 2013-2016 Jeffrey Pfau - its core (src/), libretro
   layer (libretro/) and 3DS host code (platform/3ds/source/jitmem.c, svc.s) under the Mozilla Public License 2.0
   (third_party/armgba/LICENSES/MPL-2.0.txt; no file carries the "Incompatible With Secondary Licenses" notice, so
