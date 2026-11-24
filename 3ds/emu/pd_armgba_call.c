@@ -140,14 +140,47 @@ int pd_armgba_call(uint32_t fn, const uint32_t args[4], uint32_t* r0) {
 extern bool (*gbaBkptHook)(struct GBA* gba, uint32_t address, unsigned immediate); // armgba-pokedaisy.patch
 static bool (*bkptHandler)(uint32_t address, unsigned immediate);
 
+// The Wireless Adapter check's wait (pd_armgba.c: pd_armgba_fast_adapter_check put this BKPT where the loop read its
+// timer: `ldrh r0, [r4]; cmp r0, #31; bls`). Past 31, the game goes on after the loop. Until then the clock moves on
+// without the loop's turns and the BKPT is met again: by whole ticks while more than one is left (never past the
+// 32nd), then 48 cycles at a time, and never past the next event, so interrupts and the picture come when they would.
+// The wait ends within 48 cycles of where the loop's own read would have ended it.
+static bool adapterHook;
+
+static bool adapter_wait(struct GBA* g, uint32_t address) {
+    struct CPU* cpu = &g->cpu;
+    uint32_t timer = cpu->r[4];
+    if ((timer & ~0xCu) != 0x04000100u) return false; // not the loop as it is known: the game's own exception
+    int cycles = 0;
+    uint32_t count = memoryLoad16(g, timer, &cycles);
+    if (count > 31) {
+        cpu->r[0] = count;
+        pd_armgba_jump((address + 6) | 1);
+        return true;
+    }
+    int32_t add = count < 31 ? (int32_t) (31 - count) * 1024 : 48;
+    int32_t room = cpu->nextEvent - cpu->cycles - 1;
+    if (add > room) add = room;
+    if (add < 8) add = 8;
+    cpu->cycles += add;
+    if (cpu->prefetching) g->prefetcher.base += add;
+    pd_armgba_jump(address | 1);
+    return true;
+}
+
 static bool bkpt(struct GBA* g, uint32_t address, unsigned immediate) {
-    (void) g;
+    if (adapterHook && immediate == PD_ARMGBA_ADAPTER_BKPT) return adapter_wait(g, address);
     return bkptHandler && bkptHandler(address, immediate);
 }
 
 void pd_armgba_set_bkpt(bool (*handler)(uint32_t address, unsigned immediate)) {
     bkptHandler = handler;
-    gbaBkptHook = handler ? bkpt : NULL;
+    gbaBkptHook = handler || adapterHook ? bkpt : NULL;
+}
+
+void pd_armgba_adapter_hook(bool on) {
+    adapterHook = on;
+    gbaBkptHook = bkptHandler || adapterHook ? bkpt : NULL;
 }
 
 uint32_t pd_armgba_reg(int n) {

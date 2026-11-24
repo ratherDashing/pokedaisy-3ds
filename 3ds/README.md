@@ -2,7 +2,7 @@
 
 A homebrew port of PokeDaisy: the game runs on the top screen and the companion lives on the touch screen. GBA games
 run on **armGBA** (`third_party/armgba`: a GBA core with a recompiler for the 3DS's ARM11, at ratherDashing's
-`3ds-v1.0`, armGBA 2.0's core) on a New 3DS and on **gpSP** (`third_party/gpsp`, bheppe's gpSP 3D at v0.1.7, EXPERIMENTAL) on an
+`3ds-v1.0.1`, armGBA 2.0's core) on a New 3DS and on **gpSP** (`third_party/gpsp`, bheppe's gpSP 3D at v0.1.7, EXPERIMENTAL) on an
 Old 3DS with the CIA (GBA CORE AUTO; the .3dsx keeps armGBA there), Game Boy and Game Boy Color games on **libmgba** (the
 same mGBA 0.10.5 submodule the Android app uses). A GBA game can be put on any of the three by its GBA CORE in the library. It is a rewrite, not a recompile - the Android app is Kotlin
 and Jetpack Compose, which the 3DS can't run - so this folder holds a small,
@@ -48,6 +48,13 @@ Target the **New 3DS / New 3DS XL / New 2DS XL** first; the original 3DS / 3DS X
   cartridge it knows by checksum is 16 MB; bit by bit it cost ~1.4 s), Fast Flash Saves one pass with a word compare and a
   way to be told the places. Unbound on a New 3DS, tap to running: about 12 s before, 6 s the first time now, 3.5 s after,
   3 s of it reading the 32 MB file. The dev build logs each step (`load (ms)` and `start (ms)` in `log.txt`).
+- **The Wireless Adapter check's wait** (FireRed, LeafGreen, Emerald; `pd_armgba_fast_adapter_check`): the game looks
+  for the adapter as a Pokemon Center's map loads, waiting on a timer it reads in a three-instruction loop for about 30
+  frames. Each read is a call out of armGBA's compiled code, some 30,000 a frame: 45 ms a frame in Azahar's New 3DS,
+  the black screen before a Center about 1.4 s instead of 0.5, with the sound breaking up. The loop's read is a BKPT in
+  the ROM (after its SHA-1 is taken), and `pd_armgba_call.c`'s `adapter_wait` moves the game's clock on to the next
+  event instead: the same time passes (the sim's scripts end on the same frames with the same logs and screenshots),
+  that stretch at 52 FPS instead of 19 in Azahar. Its place is kept per ROM (`rfucheck`), like the flash routines'.
 - **armGBA's warm list** (`armgba/<CRC32>.warm`): the code a game ran compiled, kept at close and compiled ahead the next
   time in what each frame leaves before 60% of a refresh (`pd_armgba_warm_one`, main.c), in the order the game first ran
   it, until the code memory is 3/4 full. Without it a battle's code was compiled the moment the battle started (Monomyth

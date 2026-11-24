@@ -638,6 +638,11 @@ void pd_session_start(struct pd_session* s, struct mCore* core, const uint32_t* 
                 pd_romart_fact_set(&s->game, "flash1", (uint32_t) start);
                 pd_romart_fact_set(&s->game, "flash2", (uint32_t) stop);
             }
+            // The Wireless Adapter check's place, kept the same way.
+            bool keptCheck = pd_romart_fact_get(&s->game, "rfucheck", &a);
+            long check = keptCheck ? (long) (int32_t) a : -2;
+            pd_armgba_fast_adapter_check(&check);
+            if (!keptCheck) pd_romart_fact_set(&s->game, "rfucheck", (uint32_t) check);
         }
     }
 

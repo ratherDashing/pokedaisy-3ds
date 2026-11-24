@@ -1,4 +1,4 @@
-# Our changes to armGBA (third_party/armgba, ratherDashing's 3DS fork at 3ds-v1.0, armGBA 2.0's core) live in armgba-pokedaisy.patch:
+# Our changes to armGBA (third_party/armgba, ratherDashing's 3DS fork at 3ds-v1.0.1, armGBA 2.0's core) live in armgba-pokedaisy.patch:
 # a hook for a Thumb BKPT in its interpreters (cpu/step.c, and cpu/lean.c, which runs what compiled code leaves to it), which the 3DS port's native m4a mixer (3ds/host/pd_mixer.c) takes over the
 # game's own with, one before an H-blank interrupt is raised (3ds/emu/pd_armgba.c: a stock handler with no callback), and
 # a table CRC-32 in cart/overrides.c that skips ROMs past 16 MB (its bit-by-bit one cost a 32 MB hack's start ~1.4 s), and

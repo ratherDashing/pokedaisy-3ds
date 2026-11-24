@@ -74,6 +74,11 @@ bool pd_armgba_threaded(void);
 // [start] / [stop]: where its two routines were in this ROM (from an earlier run), checked, no pass; *start -2 = not known
 // yet: found, and written back (-1 = not there).
 bool pd_armgba_fast_flash_saves(long* start, long* stop);
+// The Wireless Adapter check's timed wait passes without its timer reads (pd_armgba.c). After the ROM's SHA-1 is
+// taken, like the above: it puts a BKPT in the ROM. *at -2: found and written back (-1: this game has none).
+bool pd_armgba_fast_adapter_check(long* at);
+#define PD_ARMGBA_ADAPTER_BKPT 0xAD // the BKPT's number (the mixer's are host/pd_mixer.c's)
+void pd_armgba_adapter_hook(bool on);
 // The frames from now on aren't shown (fast-forward's extra ones): armGBA needn't draw them.
 void pd_armgba_skip_video(bool skip);
 // The stock H-blank handler's interrupts with no callback taken by the host (pd_armgba.c, on by default; off to compare).

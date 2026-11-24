@@ -531,6 +531,7 @@ bool pd_armgba_write(uint32_t addr, const void* data, size_t len) {
 void ag_unload(void) {
     if (!E.loaded) return;
     gbaHblankIrqHook = NULL;
+    pd_armgba_adapter_hook(false);
     pd_armgba_flush_save();
 #if defined(__3DS__)
     if (E.warmPath[0]) jitWarmSave(E.warmPath);
@@ -594,6 +595,48 @@ bool pd_armgba_warm_one(void) {
 // when each is in the ROM once. A game without them is left as it is.
 bool pd_armgba_fast_flash_saves(long* start, long* stop) {
     return E.loaded && savedataSkipFlashTimerAt(gba, start, stop);
+}
+
+// The Wireless Adapter check's wait (librfu's AgbRFU_checkID, in FireRed, LeafGreen and Emerald): after each try for
+// the adapter's ID the game starts a timer at 1024 cycles a tick and reads it in a three-instruction loop until it
+// passes 31, up to 8 times its argument. Emerald does that as a Pokemon Center's map loads: about 30 frames with the
+// CPU never idle and some 30,000 timer reads in each, every one a call out of compiled code. A New 3DS took 45 ms for
+// each of those frames, so the black screen before a Center lasted about 1.4 s instead of 0.5 and the sound broke up.
+// The loop's read becomes a BKPT (pd_armgba_call.c's adapter_wait): the same time passes on the game's clock, up to
+// the next event at a time, without the reads. Found by its code, and only when it's in the ROM once.
+// *at -2: not known, found and written back (-1: not in it once).
+bool pd_armgba_fast_adapter_check(long* at) {
+    // strh r6, [r4, #2]; strh r6, [r4]; movs r0, #0x83; strh r0, [r4, #2]; ldrh r0, [r4]; cmp r0, #31; bls
+    static const uint8_t WAIT[14] = { 0x66, 0x80, 0x26, 0x80, 0x83, 0x20, 0x60, 0x80, 0x20, 0x88, 0x1F, 0x28, 0xFC, 0xD9 };
+    static const uint8_t HOOK[2] = { PD_ARMGBA_ADAPTER_BKPT, 0xBE };
+    enum { READ_AT = 8 }; // the ldrh
+    pd_armgba_adapter_hook(false);
+    if (!E.loaded || !gba->rom || gba->romSize < 0x100) return false;
+    const uint8_t* rom = gba->rom;
+    size_t size = gba->romSize;
+    long found = *at;
+    if (found == -2) {
+        found = -1;
+        uint32_t first;
+        memcpy(&first, WAIT, 4);
+        for (size_t i = 0; i + sizeof(WAIT) <= size; i += 2) {
+            uint32_t w;
+            memcpy(&w, rom + i, 4);
+            if (w != first || memcmp(rom + i, WAIT, sizeof(WAIT))) continue;
+            if (found >= 0) {
+                found = -1; // twice: not the library as it is known
+                break;
+            }
+            found = (long) i;
+        }
+        *at = found;
+    } else if (found >= 0 && ((size_t) found + sizeof(WAIT) > size || memcmp(rom + found, WAIT, sizeof(WAIT)))) {
+        return false;
+    }
+    if (found < 0) return false;
+    if (!pd_armgba_rom_write(0x08000000u + (uint32_t) found + READ_AT, HOOK, sizeof(HOOK))) return false;
+    pd_armgba_adapter_hook(true);
+    return true;
 }
 
 // A game patch (REUSABLE TMS, INSTANT TEXT) into the cartridge, and the recompiler told: its code there is built again.
