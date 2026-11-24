@@ -1,10 +1,10 @@
-# Our changes to armGBA (third_party/armgba, ratherDashing's 3DS fork at 3ds-v0.0.3-alpha) live in armgba-pokedaisy.patch:
-# a hook for a Thumb BKPT in its interpreter, which the 3DS port's native m4a mixer (3ds/host/pd_mixer.c) takes over the
+# Our changes to armGBA (third_party/armgba, ratherDashing's 3DS fork at 3ds-v1.0, armGBA 2.0's core) live in armgba-pokedaisy.patch:
+# a hook for a Thumb BKPT in its interpreters (cpu/step.c, and cpu/lean.c, which runs what compiled code leaves to it), which the 3DS port's native m4a mixer (3ds/host/pd_mixer.c) takes over the
 # game's own with, one before an H-blank interrupt is raised (3ds/emu/pd_armgba.c: a stock handler with no callback), and
 # a table CRC-32 in cart/overrides.c that skips ROMs past 16 MB (its bit-by-bit one cost a 32 MB hack's start ~1.4 s), and
 # Fast Flash Saves' two routines found in one pass (cart/savedata.c; two passes a byte at a time cost it ~0.4 s), and the
 # recompiler's warm list made to work for us (cpu/jit.c, cpu/jit-internal.h, platform/3ds/source/jitmem.c: 30 MiB of code
-# memory, the list's check past the cartridge clock's bytes, kept in first-use order, warmed until 3/4 full). Applied to the submodule's working tree at configure time - once: a tree that already has it is left
+# memory, kept in first-use order, warmed until 3/4 full; the list's check past the cartridge clock's bytes is armGBA's own from 0.0.7). Applied to the submodule's working tree at configure time - once: a tree that already has it is left
 # alone (looked for by its text: a Docker build sees the tree, not always its git) - so a fresh checkout builds as is.
 # Moving the submodule means re-making the patch (git -C third_party/armgba diff > third_party/patches/armgba-pokedaisy.patch).
 #   include(.../apply_armgba_patch.cmake) after setting ARMGBA_DIR
@@ -18,12 +18,12 @@ string(FIND "${PK_ARMGBA_STEP}" "gbaBkptHook" PK_ARMGBA_PATCHED)
 string(FIND "${PK_ARMGBA_VIDEO}" "gbaHblankIrqHook" PK_ARMGBA_PATCHED_VIDEO)
 string(FIND "${PK_ARMGBA_OVERRIDES}" "a hack without its checksum (PokeDaisy)" PK_ARMGBA_PATCHED_CRC)
 string(FIND "${PK_ARMGBA_SAVEDATA}" "savedataSkipFlashTimerAt" PK_ARMGBA_PATCHED_FLASH)
-string(FIND "${PK_ARMGBA_JITMEM}" "Not the GPIO registers at 0xC4-0xC9" PK_ARMGBA_PATCHED_WARM)
+string(FIND "${PK_ARMGBA_JITMEM}" "up to 30 MiB (A32's branches reach 32)" PK_ARMGBA_PATCHED_WARM)
 if((PK_ARMGBA_PATCHED_CRC EQUAL -1 OR PK_ARMGBA_PATCHED_FLASH EQUAL -1 OR PK_ARMGBA_PATCHED_WARM EQUAL -1) AND NOT PK_ARMGBA_PATCHED EQUAL -1 AND NOT PK_ARMGBA_PATCHED_VIDEO EQUAL -1)
     # A tree with an older patch (without the CRC, Fast Flash Saves or warm list part): its files back to armGBA's, then
     # the whole patch below.
     execute_process(COMMAND git checkout -- src/cpu/step.c src/video/video.c src/cart/overrides.c src/cart/savedata.c src/gba.h
-        src/cpu/jit.c src/cpu/jit-internal.h platform/3ds/source/jitmem.c
+        src/cpu/jit.c src/cpu/jit-internal.h src/cpu/lean.c platform/3ds/source/jitmem.c
         WORKING_DIRECTORY "${ARMGBA_DIR}")
     set(PK_ARMGBA_PATCHED -1)
     set(PK_ARMGBA_PATCHED_VIDEO -1)

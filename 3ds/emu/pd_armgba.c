@@ -112,6 +112,9 @@ static const char* option_value(const char* key) {
         { "armgba_clock_source", "real" },
         { "armgba_player1_saves", "retroarch" },
         { "armgba_video_threads", "1" },
+        // armGBA 2.0's default is Speaker: the GBA's output capacitor (bass under ~200 Hz gone) and its PWM's bit
+        // depth. Off keeps the sound the port has had.
+        { "armgba_gba_audio_output", "disabled" },
     };
     if (!strcmp(key, "armgba_threaded_video")) return !E.host.threaded ? "disabled" : E.host.lateVideo ? "one frame late" : "enabled";
     if (!strcmp(key, "armgba_threaded_audio")) return "disabled";

@@ -168,7 +168,7 @@ species2/level2/item2 too, and zero padding is harmless since 0x00 is `nop`).
 A homebrew 3DS build, early preview (see `3ds/README.md`): a portable C core (`3ds/core/`) re-implements
 the companion's reads (addresses generated from `gamedata/`: `pd_configs_gen.h`; decoding from `Gen3Mon.kt` - keep in sync) and
 draws it at 320x240 in the OPTION look; `3ds/ctr/` runs GBA games on armGBA (`third_party/armgba`, ratherDashing's 3DS
-fork at `3ds-v0.0.3-alpha`: a recompiler; MPL-2.0, its GPL-2.0-only Gambatte left out, `3ds/emu/gb_none.c`) and Game Boy
+fork at `3ds-v1.0`, armGBA 2.0's core: a recompiler; MPL-2.0, its GPL-2.0-only Gambatte left out, `3ds/emu/gb_none.c`) and Game Boy
 games on libmgba (the same submodule). armGBA sits behind mGBA's own `struct mCore` (`3ds/emu/pd_armgba_core.c`), so the
 shared C (`pk_wide.c`, `linux/*.c`) needs no change for it (a third, gpSP 3D at `third_party/gpsp`, EXPERIMENTAL, the library's GBA CORE
 GPSP, the same way: `3ds/emu/pd_gpsp*.c`, linked into one object with only `pd_gpsp.keep`'s names global; code that branches on

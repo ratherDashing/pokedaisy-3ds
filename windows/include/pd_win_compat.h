@@ -52,6 +52,29 @@ static inline char *pd_realpath(const char *path, char *resolved) {
 }
 #define realpath pd_realpath
 
+/* A folder's entries don't say what they are here (MinGW's struct dirent has no d_type): each reads as DT_UNKNOWN
+ * through its d_ino, which MinGW always leaves 0, so armGBA looks the entry up itself (libretro/games.c). */
+#include <dirent.h>
+#define d_type d_ino
+#define DT_UNKNOWN 0
+#define DT_REG 8
+#define DT_LNK 10
+
+/* A string's first n characters, copied (POSIX; MinGW has none). */
+#include <string.h>
+static inline char *pd_strndup(const char *text, size_t n) {
+  size_t length = 0;
+  while (length < n && text[length])
+    length++;
+  char *copy = malloc(length + 1);
+  if (copy) {
+    memcpy(copy, text, length);
+    copy[length] = 0;
+  }
+  return copy;
+}
+#define strndup pd_strndup
+
 /* How many CPUs the machine has. */
 #define _SC_NPROCESSORS_ONLN 84
 static inline long sysconf(int name) {

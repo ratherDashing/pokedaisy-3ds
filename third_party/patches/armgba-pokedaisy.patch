@@ -1,5 +1,5 @@
 diff --git a/platform/3ds/source/jitmem.c b/platform/3ds/source/jitmem.c
-index a6a0cef..823d5cd 100644
+index c474448..8d0cab6 100644
 --- a/platform/3ds/source/jitmem.c
 +++ b/platform/3ds/source/jitmem.c
 @@ -88,13 +88,13 @@ static bool makeExecutable(uint8_t* code, size_t size) {
@@ -18,21 +18,6 @@ index a6a0cef..823d5cd 100644
  	HEAP_CODE_MIN = 4 << 20,
  	// Kept free while compiling: what the frontend and the core allocate as they go, saved states
  	// among it.
-@@ -309,10 +309,13 @@ void jitCounts(struct JitCounts* c) {
- // pieces of code for the first time and dropped to 56 fps (2026-11-09).
- enum { WARM_MAGIC = 0x31574741 };
- 
-+// Not the GPIO registers at 0xC4-0xC9: a cartridge clock writes them into the ROM as the game runs, so
-+// the list saved at close never matched the game at its next start (PokeDaisy, 2026-11-21: every
-+// Pokemon game with a clock).
- static uint32_t warmRomId(void) {
- 	uint32_t h = 2166136261u ^ (uint32_t) gba->romSize;
- 	for (size_t i = 0; i < 4096 && i < gba->romSize; ++i) {
--		h = (h ^ gba->rom[i]) * 16777619u;
-+		h = (h ^ (i >= 0xC4 && i < 0xCA ? 0 : gba->rom[i])) * 16777619u;
- 	}
- 	return h;
- }
 diff --git a/src/cart/overrides.c b/src/cart/overrides.c
 index b8b8b5a..e46d717 100644
 --- a/src/cart/overrides.c
@@ -145,26 +130,26 @@ index f78a42c..f0eb1c1 100644
  		return false;
  	}
 diff --git a/src/cpu/jit-internal.h b/src/cpu/jit-internal.h
-index 278a940..11f2ee9 100644
+index 79f0c97..0ec259d 100644
 --- a/src/cpu/jit-internal.h
 +++ b/src/cpu/jit-internal.h
-@@ -19,8 +19,9 @@ enum {
- 	// Within reach of every branch: AArch64's and A32's reach 128 and 32 MiB. The 3DS has 64 MiB
- 	// for everything on an Old 3DS, the cartridge buffer taking 32 of it.
+@@ -35,8 +35,9 @@ enum {
+ 	// fills is in memory. The 3DS has 64 MiB for everything on an Old 3DS, the cartridge buffer
+ 	// taking 32 of it.
  #if defined(__3DS__)
 -	// The most; the 3DS takes what the heap can spare (platform/3ds/source/jitmem.c).
 -	CODE_SIZE = 24 << 20,
 +	// The most; the 3DS takes what the heap can spare (platform/3ds/source/jitmem.c). 30 MiB stays
 +	// inside A32's 32 (PokeDaisy: a 32 MB hack's working set, Monomyth's ~23 MiB, didn't fit in 24).
 +	CODE_SIZE = 30 << 20,
+ 	CODE_SIZE_MIN = CODE_SIZE,
  #else
- 	CODE_SIZE = (UINTPTR_MAX > 0xFFFFFFFFu ? 64 : 16) << 20,
- #endif
+ 	CODE_SIZE = 32 << 20,
 diff --git a/src/cpu/jit.c b/src/cpu/jit.c
-index a502f5b..3feedcc 100644
+index c8792f0..4ff88c8 100644
 --- a/src/cpu/jit.c
 +++ b/src/cpu/jit.c
-@@ -2431,6 +2431,17 @@ static int warmOrder(const void* a, const void* b) {
+@@ -3001,6 +3001,17 @@ static int warmOrder(const void* a, const void* b) {
  	return x[1] < y[1] ? -1 : x[1] > y[1];
  }
  
@@ -182,7 +167,7 @@ index a502f5b..3feedcc 100644
  size_t jitWarmTake(struct GBA* gba, uint32_t* pairs, size_t max) {
  	struct Jit* jit = gba->jit;
  	if (!jit) {
-@@ -2449,16 +2460,42 @@ size_t jitWarmTake(struct GBA* gba, uint32_t* pairs, size_t max) {
+@@ -3019,16 +3030,42 @@ size_t jitWarmTake(struct GBA* gba, uint32_t* pairs, size_t max) {
  			++count;
  		}
  	}
@@ -228,7 +213,7 @@ index a502f5b..3feedcc 100644
  	return kept;
  }
  
-@@ -2483,9 +2520,10 @@ bool jitWarmStep(struct GBA* gba) {
+@@ -3053,9 +3090,10 @@ bool jitWarmStep(struct GBA* gba) {
  	if (!jit || !jit->warmCount || jit->flushRequested || jit->waitsChanged || gba->traceFile) {
  		return false;
  	}
@@ -242,8 +227,27 @@ index a502f5b..3feedcc 100644
  		jit->warmCount = 0;
  		return false;
  	}
+diff --git a/src/cpu/lean.c b/src/cpu/lean.c
+index bd0c392..7728395 100644
+--- a/src/cpu/lean.c
++++ b/src/cpu/lean.c
+@@ -671,8 +671,13 @@ static void armSwi(struct GBA* gba, uint32_t opcode, uint32_t address) {
+ 	stepException(gba, MODE_SUPERVISOR, 0x08, address + 4);
+ }
+ 
++// PokeDaisy: a Thumb BKPT (undefined on a GBA) goes to the host first, which may take it (step.c: gbaBkptHook).
++extern bool (*gbaBkptHook)(struct GBA* gba, uint32_t address, unsigned immediate);
++
+ static void thumbUndefined(struct GBA* gba, uint32_t opcode, uint32_t address) {
+-	(void) opcode;
++	if (gbaBkptHook && (opcode & 0xFF00) == 0xBE00 && gbaBkptHook(gba, address, opcode & 0xFF)) {
++		return;
++	}
+ 	stepException(gba, MODE_UNDEFINED, 0x04, address + 2);
+ }
+ 
 diff --git a/src/cpu/step.c b/src/cpu/step.c
-index 10bae0c..932ba86 100644
+index d6581c1..22fe727 100644
 --- a/src/cpu/step.c
 +++ b/src/cpu/step.c
 @@ -22,6 +22,10 @@ static uint32_t ror32(uint32_t value, unsigned rotate) {
@@ -257,7 +261,7 @@ index 10bae0c..932ba86 100644
  // After a PC write, the new PC's fetch is nonsequential and the next one sequential.
  void stepReload(struct GBA* gba) {
  	struct CPU* cpu = &gba->cpu;
-@@ -604,6 +608,10 @@ void stepExecute(struct GBA* gba, const struct Inst* in) {
+@@ -616,6 +620,10 @@ void stepExecute(struct GBA* gba, const struct Inst* in) {
  		exception(gba, MODE_SUPERVISOR, 0x08, in->address + width);
  		break;
  	default:
@@ -269,10 +273,10 @@ index 10bae0c..932ba86 100644
  		break;
  	}
 diff --git a/src/gba.h b/src/gba.h
-index 2792663..4833cd6 100644
+index 2961013..b6bd8b8 100644
 --- a/src/gba.h
 +++ b/src/gba.h
-@@ -1134,6 +1134,7 @@ void savedataForceType(struct GBA*, enum SavedataType);
+@@ -1197,6 +1197,7 @@ void savedataForceType(struct GBA*, enum SavedataType);
  void savedataInitSram(struct GBA*);
  void savedataInitFlash(struct GBA*);
  bool savedataSkipFlashTimer(struct GBA*);
@@ -281,7 +285,7 @@ index 2792663..4833cd6 100644
  uint8_t savedataReadFlash(struct GBA*, uint16_t address);
  void savedataWriteFlash(struct GBA*, uint16_t address, uint8_t value);
 diff --git a/src/video/video.c b/src/video/video.c
-index 5593f3d..0e8c0e1 100644
+index 2fe9bf8..8ea59b5 100644
 --- a/src/video/video.c
 +++ b/src/video/video.c
 @@ -19,6 +19,10 @@ enum {
@@ -295,12 +299,14 @@ index 5593f3d..0e8c0e1 100644
  static const int IRQ_OF_EVENT[3] = { IRQ_VBLANK, IRQ_HBLANK, IRQ_VCOUNTER };
  
  // The V-blank, H-blank and line-match interrupts are requested one cycle after what causes them.
-@@ -440,7 +444,7 @@ static void startHblank(struct GBA* gba, void* context, uint32_t late) {
- 	if (video->vcount < VISIBLE_LINES) {
+@@ -446,7 +450,9 @@ static void startHblank(struct GBA* gba, void* context, uint32_t late) {
  		dmaRequestHblank(gba, late);
  	}
--	if ((dispstat & 0x0010) && (gba->irq.ie & (1 << IRQ_HBLANK))) {
-+	if ((dispstat & 0x0010) && (gba->irq.ie & (1 << IRQ_HBLANK)) && !(gbaHblankIrqHook && gbaHblankIrqHook(gba))) {
- 		scheduleIrq(gba, 1, late);
- 	}
- 	scheduleVideo(gba, timingCurrentTime(gba) - late);
+ 	if ((dispstat & 0x0010) && (gba->irq.ie & (1 << IRQ_HBLANK))) {
+-		scheduleIrq(gba, 1, late);
++		if (!(gbaHblankIrqHook && gbaHblankIrqHook(gba))) {
++			scheduleIrq(gba, 1, late);
++		}
+ 	} else if (gba->irq.quietLater) {
+ 		// IE has left the IRQ out since the last H-blank. This request only sets IF, as a quiet one
+ 		// would, and the ones after it are quiet.

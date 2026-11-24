@@ -44,7 +44,7 @@ void* libretroGbSystemRam(size_t* size) { *size = 0; return NULL; }
 size_t libretroGbMemoryMap(struct retro_memory_descriptor* map) { (void)map; return 0; }
 bool libretroGbIsColor(void) { return false; }
 bool libretroGbSetCheats(const char* const* codes, size_t count) { (void)codes; (void)count; return false; }
-void libretroGbSetCpuClock(unsigned quarters) { (void)quarters; }
+void libretroGbSetCpuClock(unsigned quarters, bool loaded) { (void)quarters; (void)loaded; }
 bool libretroGbBooting(void) { return false; }
 size_t libretroGbStateSize(void) { return 0; }
 void libretroGbExactStates(bool exact) { (void)exact; }
@@ -61,3 +61,30 @@ void libretroGbSetPlayers(int count, bool adapter) { (void)count; (void)adapter;
 void libretroGbRunPlayers(const uint16_t keys[], const uint32_t* pictures[], const int16_t* samples[], size_t frames[]) {
   (void)keys; (void)pictures; (void)samples; (void)frames;
 }
+/* armGBA 2.0's additions: the output capacitors, the Mega Duck, Datel's Action Replay for the Game Boy, Layer and Channel
+ * Selection, netplay's states. */
+void libretroGbSetAudioFilter(enum LibretroGbFilter filter) { (void)filter; }
+void libretroGbSetAdvanceOutput(enum LibretroAdvanceOutput output) { (void)output; }
+void libretroGbSetMegaDuck(int kind) { (void)kind; }
+void libretroGbSetMegaDuckLaptop(bool on, int printer, int language) { (void)on; (void)printer; (void)language; }
+void libretroGbSetMegaDuckSlot(const void* rom, size_t size, int kind) { (void)rom; (void)size; (void)kind; }
+void libretroGbSetActionReplay(const void* program, size_t size, bool game) { (void)program; (void)size; (void)game; }
+bool libretroGbSwapGame(const void* rom, size_t size, bool game, char* error, size_t errorSize) {
+  (void)rom; (void)size; (void)game;
+  if (error && errorSize) snprintf(error, errorSize, "This core plays Game Boy Advance games; Game Boy games run on the PokeDaisy core");
+  return false;
+}
+void libretroGbSetGameGenieCodes(const uint8_t digits[27], const uint8_t counts[3]) { (void)digits; (void)counts; }
+void libretroGbActionReplayControls(bool button, bool switchOn) { (void)button; (void)switchOn; }
+uint8_t* libretroGbActionReplayFlash(size_t* size) {
+  if (size) *size = 0;
+  return NULL;
+}
+bool libretroGbActionReplayFlashChanged(void) { return false; }
+void libretroGbKeyboard(bool down, unsigned keycode, uint32_t character, uint16_t modifiers) {
+  (void)down; (void)keycode; (void)character; (void)modifiers;
+}
+const int16_t* libretroGbMixSpeech(const int16_t* samples, size_t frames) { (void)frames; return samples; }
+void libretroGbSetLayersShown(unsigned mask) { (void)mask; }
+void libretroGbSetMutedChannels(unsigned mask) { (void)mask; }
+void libretroGbNetplayStates(bool netplay) { (void)netplay; }

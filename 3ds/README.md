@@ -2,7 +2,7 @@
 
 A homebrew port of PokeDaisy: the game runs on the top screen and the companion lives on the touch screen. GBA games
 run on **armGBA** (`third_party/armgba`: a GBA core with a recompiler for the 3DS's ARM11, at ratherDashing's
-`3ds-v0.0.3-alpha`) on a New 3DS and on **gpSP** (`third_party/gpsp`, bheppe's gpSP 3D at v0.1.7, EXPERIMENTAL) on an
+`3ds-v1.0`, armGBA 2.0's core) on a New 3DS and on **gpSP** (`third_party/gpsp`, bheppe's gpSP 3D at v0.1.7, EXPERIMENTAL) on an
 Old 3DS with the CIA (GBA CORE AUTO; the .3dsx keeps armGBA there), Game Boy and Game Boy Color games on **libmgba** (the
 same mGBA 0.10.5 submodule the Android app uses). A GBA game can be put on any of the three by its GBA CORE in the library. It is a rewrite, not a recompile - the Android app is Kotlin
 and Jetpack Compose, which the 3DS can't run - so this folder holds a small,

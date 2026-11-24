@@ -9,7 +9,8 @@ if(NOT EXISTS "${ARMGBA_DIR}/src/gba.c")
 endif()
 include("${CMAKE_CURRENT_LIST_DIR}/../../third_party/patches/apply_armgba_patch.cmake")
 set(ARMGBA_SRC bios-image.c bus.c cheats.c gba.c memory.c state.c timing.c audio/audio.c audio/audio-thread.c audio/psg.c
-    cart/cart.c cart/ereader.c cart/gpio.c cart/overrides.c cart/savedata.c cpu/arm.c cpu/decode.c cpu/step.c io/dma.c
+    cart/actionreplay.c cart/cart.c cart/ereader.c cart/fcd.c cart/gpio.c cart/overrides.c cart/savedata.c cpu/arm.c cpu/decode.c
+    cpu/lean.c cpu/step.c io/dma.c
     io/io.c io/rfu.c io/sio.c io/timer.c video/render-thread.c video/render.c video/video.c)
 if(NOT DEFINED ARMGBA_BACKEND)
     set(ARMGBA_BACKEND "")
@@ -23,8 +24,8 @@ if(ARMGBA_RENDER_SIMD)
     list(APPEND ARMGBA_SRC video/${ARMGBA_RENDER_SIMD})
 endif()
 list(TRANSFORM ARMGBA_SRC PREPEND "${ARMGBA_DIR}/src/")
-set(ARMGBA_LIBRETRO_SRC libretro.c clock.c lcd.c options.c saves.c dolphin.c link.c games.c savefiles.c patch.c dmg07.c
-    ereader.c printer.c printout.c workers.c)
+set(ARMGBA_LIBRETRO_SRC libretro.c clock.c lcd.c options.c saves.c dolphin.c link.c games.c cht.c gbacheats.c savefiles.c patch.c
+    dmg07.c ereader.c printer.c printout.c workers.c)
 list(TRANSFORM ARMGBA_LIBRETRO_SRC PREPEND "${ARMGBA_DIR}/libretro/")
 file(GLOB_RECURSE ARMGBA_ARCHIVE_SRC "${ARMGBA_DIR}/libretro/deps/libretro-common/*.c" "${ARMGBA_DIR}/libretro/deps/7zip/*.c")
 

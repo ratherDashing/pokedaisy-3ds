@@ -8,7 +8,7 @@ Gambatte (GPL-2.0 only, not linkable into this GPL-3.0 work), so they stay on `p
 
 ## How it is built
 - `cmake -S libretro/armgba -B build -DCMAKE_TOOLCHAIN_FILE=libretro/aarch64.cmake`, target `pokedaisy_gba_libretro`, which writes `pokedaisy_gba_libretro.so`.
-  Submodules: `third_party/armgba` (pinned, v1.5) and `third_party/zlib` (v1.3.1; the cross toolchain image has none, and
+  Submodules: `third_party/armgba` (pinned, v2.0) and `third_party/zlib` (v1.3.1; the cross toolchain image has none, and
   zlib's CMake renames `zconf.h` inside its source tree, so `git checkout third_party/zlib` after a container build).
 - `libretro/pd_libretro.c` reaches its emulator through `libretro/pd_backend.h`: mGBA's `libretro.c` (the default build,
   `libretro/CMakeLists.txt`), or armGBA's with `-DPD_ARMGBA` (this directory). armGBA's libretro glue is included with its entry points renamed and is never edited.

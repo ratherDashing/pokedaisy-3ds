@@ -101,6 +101,9 @@ static const struct { const char *key, *value; } HELD[] = {
     {"armgba_lcd_grid", "disabled"}, {"armgba_lcd_screen", "auto"}, {"armgba_link_mode", "off"},
     {"armgba_player1_saves", "retroarch"}, {"armgba_load_save", "off"}, {"armgba_send_save", "off"},
     {"armgba_back_up_save", "off"}, {"armgba_shared_controls", "off"}, {"armgba_player2_game", "same"},
+    /* armGBA 2.0's: HD Affine Backgrounds is a frame bigger than the GBA's too, and GBA Audio Output's default (Speaker:
+     * the GBA's output capacitor and PWM depth, less bass) would change the sound this core has had. */
+    {"armgba_hd_affine", "disabled"}, {"armgba_gba_audio_output", "disabled"},
 };
 static const char *const HIDDEN_PREFIX[] = {"armgba_lcd_", "armgba_gb_", "armgba_link_"};
 static const char *const HIDDEN[] = {"armgba_r2_follows", "armgba_switch_controller", "armgba_player_numbers",

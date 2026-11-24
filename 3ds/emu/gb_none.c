@@ -115,7 +115,7 @@ bool libretroGbSetCheats(const char* const* codes, size_t count) {
     return false;
 }
 
-void libretroGbSetCpuClock(unsigned quarters) {
+void libretroGbSetCpuClock(unsigned quarters, bool loaded) {
     
 }
 
@@ -164,5 +164,71 @@ void libretroGbSetPlayers(int count, bool adapter) {
 }
 
 void libretroGbRunPlayers(const uint16_t keys[], const uint32_t* pictures[], const int16_t* samples[], size_t frames[]) {
+    
+}
+
+void libretroGbSetAudioFilter(enum LibretroGbFilter filter) {
+    
+}
+
+void libretroGbSetAdvanceOutput(enum LibretroAdvanceOutput output) {
+    
+}
+
+void libretroGbSetMegaDuck(int kind) {
+    
+}
+
+void libretroGbSetMegaDuckLaptop(bool on, int printer, int language) {
+    
+}
+
+void libretroGbSetMegaDuckSlot(const void* rom, size_t size, int kind) {
+    
+}
+
+void libretroGbSetActionReplay(const void* program, size_t size, bool game) {
+    
+}
+
+bool libretroGbSwapGame(const void* rom, size_t size, bool game, char* error, size_t errorSize) {
+    if (error && errorSize) snprintf(error, errorSize, "Game Boy games run on mGBA in this build");
+    return false;
+}
+
+void libretroGbSetGameGenieCodes(const uint8_t digits[27], const uint8_t counts[3]) {
+    
+}
+
+void libretroGbActionReplayControls(bool button, bool switchOn) {
+    
+}
+
+uint8_t* libretroGbActionReplayFlash(size_t* size) {
+    if (size) *size = 0;
+    return NULL;
+}
+
+bool libretroGbActionReplayFlashChanged(void) {
+    return false;
+}
+
+void libretroGbKeyboard(bool down, unsigned keycode, uint32_t character, uint16_t modifiers) {
+    
+}
+
+const int16_t* libretroGbMixSpeech(const int16_t* samples, size_t frames) {
+    return samples;
+}
+
+void libretroGbSetLayersShown(unsigned mask) {
+    
+}
+
+void libretroGbSetMutedChannels(unsigned mask) {
+    
+}
+
+void libretroGbNetplayStates(bool netplay) {
     
 }
